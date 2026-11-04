@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from kb_agent.config import AppConfig, load_config
-from kb_agent.sources.registry import SourceConfig, SourceRegistry, ensure_sources_file
+from kb_agent.sources.registry import SourceConfig, SourceRegistry
 from kb_agent.sources.telegram import collect_telegram_source
 from kb_agent.sources.youtube import collect_youtube_source
 from kb_agent.storage.state import StateManager
@@ -37,8 +37,10 @@ class SourceManager:
     def __init__(self, config: AppConfig, state: StateManager) -> None:
         self.config = config
         self.state = state
-        # На чистой установке создаём реестр источников, иначе сбор молча пустой
-        ensure_sources_file(config.sources_path, config=config)
+        # Источники берутся из канонического хранилища SQLite (SourceRegistry
+        # с state). YAML (sources-page) — только экспорт/импорт, не источник
+        # чтения для сборщика. На чистой установке реестр пуст; добавить
+        # источник можно через `kb-agent sources add` или pending/MCP.
         registry_path = config.sources_path
         self.registry = SourceRegistry(sources_path=registry_path, state=state)
 

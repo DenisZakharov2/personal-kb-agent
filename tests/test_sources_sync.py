@@ -115,3 +115,80 @@ class TestPendingAffectsCollector:
         manager = SourceManager(config, state)
         ids = {s.id for s in manager.registry.list()}
         assert "yt_gone" not in ids, f"Источник всё ещё в реестре сборщика: {ids}"
+
+
+class TestCollectorReadsFromSqliteNotYaml:
+    """P1-01: SourceManager читает источники из SQLite (канонического хранилища),
+    а не из sources.yaml. YAML — только экспорт/импорт."""
+
+    def test_source_in_yaml_only_not_visible_to_collector(self, state, config, temp_dir):
+        """Источник, записанный только в sources.yaml (не в SQLite),
+        не должен быть виден сборщику."""
+        # Пишем источник напрямую в YAML, минуя SQLite
+        import yaml
+        yaml_data = {
+            "version": 1,
+            "sources": [
+                {
+                    "id": "yt_yaml_only",
+                    "type": "youtube",
+                    "url": "https://youtube.com/@yamlonly",
+                    "enabled": True,
+                }
+            ],
+        }
+        config.sources_path.write_text(
+            yaml.dump(yaml_data, allow_unicode=True), encoding="utf-8"
+        )
+
+        manager = SourceManager(config, state)
+        ids = {s.id for s in manager.registry.list()}
+        assert "yt_yaml_only" not in ids, (
+            f"Источник из YAML не должен попасть в сборщик (только SQLite): {ids}"
+        )
+
+    def test_source_in_sqlite_only_visible_to_collector(self, state, config, temp_dir):
+        """Источник, записанный только в SQLite (не в YAML),
+        должен быть виден сборщику."""
+        # Убеждаемся, что YAML не содержит источников (или файла нет)
+        if config.sources_path.exists():
+            config.sources_path.unlink()
+
+        registry = SourceRegistry(sources_path=config.sources_path, state=state)
+        registry.add(
+            SourceConfig(
+                id="tg_sqlite_only",
+                type="telegram",
+                url="https://t.me/s/sqliteonly",
+                enabled=True,
+            )
+        )
+
+        manager = SourceManager(config, state)
+        ids = {s.id for s in manager.registry.list()}
+        assert "tg_sqlite_only" in ids, (
+            f"Источник из SQLite должен быть виден сборщику: {ids}"
+        )
+
+    def test_manager_without_yaml_file_still_works(self, state, config, temp_dir):
+        """SourceManager работает даже если sources.yaml отсутствует entirely."""
+        if config.sources_path.exists():
+            config.sources_path.unlink()
+
+        manager = SourceManager(config, state)
+        sources = manager.registry.list()
+        assert sources == []
+
+        # Можно добавить источник через тот же реестр менеджера
+        manager.registry.add(
+            SourceConfig(
+                id="tg_no_yaml",
+                type="telegram",
+                url="https://t.me/s/noyaml",
+                enabled=True,
+            )
+        )
+
+        sources = manager.registry.list()
+        assert len(sources) == 1
+        assert sources[0].id == "tg_no_yaml"

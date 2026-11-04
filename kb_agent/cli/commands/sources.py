@@ -101,7 +101,7 @@ def sources_add(
         help="Вывести результат в формате JSON",
     ),
 ) -> None:
-    """Добавить новый источник в sources.yaml."""
+    """Добавить новый источник в каноническое хранилище (SQLite)."""
     config = load_config()
     state = StateManager(config.db_path)
     try:
@@ -267,7 +267,7 @@ def sources_enable(
         help="Вывести результат в формате JSON",
     ),
 ) -> None:
-    """Включить источник в sources.yaml."""
+    """Включить источник в каноническом хранилище (SQLite)."""
     _toggle_source(source_id, True, json_output)
 
 
@@ -281,5 +281,5 @@ def sources_disable(
         help="Вывести результат в формате JSON",
     ),
 ) -> None:
-    """Выключить источник в sources.yaml."""
+    """Выключить источник в каноническом хранилище (SQLite)."""
     _toggle_source(source_id, False, json_output)
