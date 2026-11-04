@@ -26,13 +26,36 @@ jobs:
 
       - name: Configure environment
         run: |
-          cp .env.example .env
-          echo "KB_VAULT_PATH=${{ secrets.KB_VAULT_PATH }}" >> .env
-          echo "KB_TELEGRAM_CHANNELS=${{ secrets.KB_TELEGRAM_CHANNELS }}" >> .env
-          echo "KB_YOUTUBE_CHANNELS=${{ secrets.KB_YOUTUBE_CHANNELS }}" >> .env
+          # Все данные конвейера складываем во временную рабочую директорию раннера,
+          # чтобы после прогона можно было сохранить артефакты (vault + state.db).
+          echo "KB_DATA_DIR=${{ runner.temp }}/kb-data" >> $GITHUB_ENV
+          echo "KB_VAULT_PATH=${{ runner.temp }}/kb-vault" >> $GITHUB_ENV
+          echo "KB_DB_PATH=${{ runner.temp }}/kb-data/state.db" >> $GITHUB_ENV
+          echo "KB_LOG_PATH=${{ runner.temp }}/kb-data/kb_agent.log" >> $GITHUB_ENV
+          # Секреты из GitHub Secrets пробрасываем в окружение приложения через $GITHUB_ENV
+          # (load_config читает переменные окружения, поэтому .env-файл не нужен).
+          if [ "${{ secrets.KB_VAULT_PATH }}" != "" ]; then
+            echo "KB_VAULT_PATH=${{ secrets.KB_VAULT_PATH }}" >> $GITHUB_ENV
+          fi
+          echo "KB_TELEGRAM_CHANNELS=${{ secrets.KB_TELEGRAM_CHANNELS }}" >> $GITHUB_ENV
+          echo "KB_YOUTUBE_CHANNELS=${{ secrets.KB_YOUTUBE_CHANNELS }}" >> $GITHUB_ENV
 
       - name: Run kb-agent pipeline (сбор + суммаризация + индексация)
         run: kb-agent process run
 
       - name: Show status
         run: kb-agent process status
+
+      - name: Гарантировать существование путей для артефактов
+        if: always()
+        run: |
+          mkdir -p "${{ env.KB_VAULT_PATH }}" "${{ runner.temp }}/kb-data"
+
+      - name: Сохранить артефакты (vault + state.db)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kb-state
+          path: |
+            ${{ env.KB_VAULT_PATH }}
+            ${{ env.KB_DB_PATH }}
