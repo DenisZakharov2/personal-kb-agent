@@ -121,7 +121,8 @@ def fetch_channel_posts(channel: str, limit: int) -> list[dict]:
 
 def main() -> int:
     args = parse_args()
-    script_dir = Path(__file__).resolve().parent
+    queue_dir = os.getenv("KB_QUEUE_DIR", "").strip()
+    script_dir = Path(queue_dir).resolve() if queue_dir else Path(__file__).resolve().parent
     queue_file = script_dir / "_queue.jsonl"
     done_file = script_dir / "_done.txt"
     state_file = script_dir / "processed.txt"
