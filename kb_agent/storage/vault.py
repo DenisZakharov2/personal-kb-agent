@@ -182,6 +182,67 @@ class VaultManager:
         logger.info("Заметка archived: %s -> %s", path, target)
         return target
 
+    def merge_notes_files(self, keep_note_id: str, drop_note_id: str) -> dict:
+        """Синхронизирует файлы двух заметок при слиянии.
+
+        * У файла основной заметки (``keep_note_id``) во frontmatter добавляется
+          поле ``merged_from`` со списком архивированных дублей.
+        * Файл дубля (``drop_note_id``) перемещается в папку ``Архив`` через
+          ``archive_note`` (идемпотентно: если уже в архиве — остаётся на месте).
+
+        Возвращает отчёт с путями файлов.
+        """
+        keep_path = self.find_note_file(keep_note_id)
+        drop_path = self.find_note_file(drop_note_id)
+
+        report: dict = {
+            "keep_note_id": keep_note_id,
+            "drop_note_id": drop_note_id,
+            "keep_file": str(keep_path) if keep_path else None,
+            "drop_file": str(drop_path) if drop_path else None,
+            "drop_archived_to": None,
+            "frontmatter_updated": False,
+        }
+
+        # Основной файл: фиксируем в frontmatter, из какого дубля слияние.
+        if keep_path is not None:
+            self._add_merged_from(keep_path, drop_note_id)
+            report["frontmatter_updated"] = True
+
+        # Файл дубля — в архив (безопасно, если уже там).
+        if drop_path is not None:
+            archived_path = self.archive_note(drop_note_id)
+            report["drop_archived_to"] = str(archived_path) if archived_path else None
+
+        return report
+
+    def _add_merged_from(self, path: Path, merged_note_id: str) -> None:
+        """Добавляет ``note_id`` дубля в поле ``merged_from`` frontmatter файла."""
+        text = path.read_text(encoding="utf-8")
+        if not text.startswith("---\n"):
+            return
+        _, _, rest = text.partition("---\n")
+        frontmatter_text, _, body = rest.partition("---\n")
+        try:
+            loaded = yaml.safe_load(frontmatter_text) or {}
+        except yaml.YAMLError:  # noqa: BLE001
+            return
+        if not isinstance(loaded, dict):
+            return
+        merged_from = loaded.get("merged_from") or []
+        if not isinstance(merged_from, list):
+            merged_from = [merged_from] if merged_from else []
+        merged_from = [str(m) for m in merged_from if str(m).strip()]
+        if merged_note_id not in merged_from:
+            merged_from.append(merged_note_id)
+        loaded["merged_from"] = merged_from
+        new_fm = (
+            yaml.safe_dump(loaded, allow_unicode=True, sort_keys=False, default_flow_style=False).strip()
+        )
+        path.write_text(
+            "---\n" + new_fm + "\n---\n" + body, encoding="utf-8"
+        )
+
     def restore_note(self, note_id: str, topic: Optional[str] = None) -> Optional[Path]:
         """Возвращает файл заметки из архива в тематическую папку.
 

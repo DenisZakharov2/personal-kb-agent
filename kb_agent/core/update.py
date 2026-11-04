@@ -90,3 +90,26 @@ class KnowledgeUpdater:
             "Семантический поиск противоречий будет доступен в следующей версии."
         )
         return report
+
+    def merge_notes(self, keep_note_id: str, drop_note_id: str) -> dict:
+        """Сервис слияния двух заметок: координирует состояние БД и файлы vault.
+
+        Выполняет ``StateManager.merge_notes`` (БД) и
+        ``VaultManager.merge_notes_files`` (файлы) последовательно. Возвращает
+        объединённый отчёт.
+        """
+        from kb_agent.storage.vault import VaultManager
+
+        state_report = self.state.merge_notes(keep_note_id, drop_note_id)
+
+        vault = VaultManager(self.config)
+        vault_report = vault.merge_notes_files(keep_note_id, drop_note_id)
+
+        return {
+            "kept_note_id": state_report["kept_note_id"],
+            "dropped_note_id": state_report["dropped_note_id"],
+            "links_moved": state_report["links_moved"],
+            "raw_content_moved": state_report["raw_content_moved"],
+            "fts_entries_removed": state_report["fts_entries_removed"],
+            "vault": vault_report,
+        }

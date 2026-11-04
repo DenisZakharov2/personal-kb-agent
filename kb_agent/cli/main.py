@@ -41,6 +41,7 @@ from kb_agent.cli.commands.ask import (
     insights_command,
     update_app,
 )
+from kb_agent.cli.commands.merge import merge_command
 from kb_agent.agents.mcp_server import main as mcp_main
 
 app = typer.Typer(
@@ -99,6 +100,12 @@ app.command(
 
 # Подключаем группу update с подкомандой check (Этап 3)
 app.add_typer(update_app, name="update", help="Проверка актуализации базы знаний (Этап 3)")
+
+# Слияние дублей (раздел 9 аудита)
+app.command(
+    name="merge",
+    help="Объединить две заметки: дубль архивируется, ссылки переносятся на основную",
+)(merge_command)
 
 # Команда MCP-сервера (Этап 4)
 @app.command(name="mcp-serve", help="Запустить MCP-сервер для внешних агентов (чтение + pending-запись с подтверждением через CLI)")

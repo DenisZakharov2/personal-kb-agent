@@ -746,6 +746,143 @@ class StateManager:
         conn.commit()
         return cur.rowcount > 0
 
+    def merge_notes(self, keep_note_id: str, drop_note_id: str) -> dict:
+        """Объединяет две заметки: ``drop_note_id`` архивируется, а ``keep_note_id`` остаётся.
+
+        Выполняется в одной транзакции ``BEGIN IMMEDIATE`` (защита от параллельного
+        запуска). Никакая заметка не удаляется физически из ``notes`` — дубль только
+        помечается ``is_archived = 1``, чтобы сохранить историю и возможность отката.
+
+        Переносит все ссылки из ``note_links``, указывавшие на дубль, на основную
+        заметку (самоссылки и дубликаты удаляются). При необходимости копирует
+        ``raw_content`` дубля в основную заметку и удаляет дубль из ``notes_fts``.
+
+        Возвращает отчёт с ключами:
+        kept_note_id, dropped_note_id, links_moved, raw_content_moved, fts_entries_removed.
+        """
+        conn = self.connect()
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            keep_row = conn.execute(
+                "SELECT * FROM notes WHERE note_id = ?", (keep_note_id,)
+            ).fetchone()
+            drop_row = conn.execute(
+                "SELECT * FROM notes WHERE note_id = ?", (drop_note_id,)
+            ).fetchone()
+            if keep_row is None or drop_row is None:
+                conn.rollback()
+                raise ValueError(
+                    f"Заметка не найдена: keep={keep_note_id}, drop={drop_note_id}"
+                )
+
+            # a) notes — дубль помечается архивным, основная остаётся без изменений.
+            conn.execute(
+                """
+                UPDATE notes
+                SET is_archived = 1, updated_at = datetime('now')
+                WHERE note_id = ?
+                """,
+                (drop_note_id,),
+            )
+
+            # b) note_links — все связи дубля переназначаются на основную заметку.
+            drop_links = conn.execute(
+                """
+                SELECT source_note_id, target_note_id, link_type
+                FROM note_links
+                WHERE source_note_id = ? OR target_note_id = ?
+                """,
+                (drop_note_id, drop_note_id),
+            ).fetchall()
+
+            links_moved = 0
+            for row in drop_links:
+                src = (
+                    keep_note_id
+                    if row["source_note_id"] == drop_note_id
+                    else row["source_note_id"]
+                )
+                tgt = (
+                    keep_note_id
+                    if row["target_note_id"] == drop_note_id
+                    else row["target_note_id"]
+                )
+                link_type = row["link_type"]
+
+                # Удаляем исходную строку (она ссылается на дубль).
+                conn.execute(
+                    """
+                    DELETE FROM note_links
+                    WHERE source_note_id = ? AND target_note_id = ? AND link_type = ?
+                    """,
+                    (row["source_note_id"], row["target_note_id"], link_type),
+                )
+                if src == tgt:
+                    # После переназначения получилась само-ссылка — не восстанавливаем.
+                    links_moved += 1
+                    continue
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO note_links
+                        (source_note_id, target_note_id, link_type)
+                    VALUES (?, ?, ?)
+                    """,
+                    (src, tgt, link_type),
+                )
+                links_moved += 1
+
+            # c) note_raw_content — если у дубля есть контент, а у основной нет,
+            # копируем его в основную; запись дубля удаляется.
+            raw_content_moved = False
+            keep_raw = conn.execute(
+                "SELECT 1 FROM note_raw_content WHERE note_id = ?", (keep_note_id,)
+            ).fetchone()
+            drop_raw = conn.execute(
+                "SELECT * FROM note_raw_content WHERE note_id = ?", (drop_note_id,)
+            ).fetchone()
+            if drop_raw is not None and keep_raw is None:
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO note_raw_content
+                        (note_id, raw_content, source_id, external_id,
+                         canonical_url, raw_hash, created_at, updated_at)
+                    SELECT
+                        ?, raw_content, source_id, external_id,
+                        canonical_url, raw_hash, created_at, datetime('now')
+                    FROM note_raw_content
+                    WHERE note_id = ?
+                    """,
+                    (keep_note_id, drop_note_id),
+                )
+                raw_content_moved = True
+            conn.execute(
+                "DELETE FROM note_raw_content WHERE note_id = ?", (drop_note_id,)
+            )
+
+            # d) notes_fts — удаляем дубль из поисковой проекции.
+            drop_fts = conn.execute(
+                "SELECT 1 FROM notes_fts WHERE note_id = ?", (drop_note_id,)
+            ).fetchone()
+            fts_entries_removed = 0
+            if drop_fts:
+                conn.execute(
+                    "DELETE FROM notes_fts WHERE note_id = ?", (drop_note_id,)
+                )
+                fts_entries_removed = 1
+
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+
+        return {
+            "kept_note_id": keep_note_id,
+            "dropped_note_id": drop_note_id,
+            "links_moved": links_moved,
+            "raw_content_moved": raw_content_moved,
+            "fts_entries_removed": fts_entries_removed,
+        }
+
     def save_generation_log(
         self,
         note_id: Optional[str],
