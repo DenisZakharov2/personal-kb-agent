@@ -556,6 +556,30 @@ class StateManager:
         conn.execute("DELETE FROM notes_fts WHERE note_id = ?", (note_id,))
         conn.commit()
 
+    def rebuild_fts(self) -> int:
+        """Перестраивает notes_fts целиком из канонической таблицы notes.
+
+        Используется при восстановлении после частичного сбоя или при
+        миграции: все старые записи FTS удаляются, затем вставляются актуальные
+        из notes. Возвращает количество проиндексированных заметок.
+        """
+        conn = self.connect()
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            conn.execute("DELETE FROM notes_fts")
+            cur = conn.execute(
+                """
+                INSERT INTO notes_fts (note_id, title, tags, topic, content)
+                SELECT note_id, title, tags, topic, content_hash
+                FROM notes
+                """
+            )
+            conn.commit()
+            return cur.rowcount
+        except Exception:
+            conn.rollback()
+            raise
+
     def search(self, query: str, limit: int = 10) -> list[dict]:
         conn = self.connect()
         # Ограничиваем размер выдачи: защита от выкачивания всей базы в контекст LLM.
