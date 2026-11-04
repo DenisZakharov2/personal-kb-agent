@@ -68,6 +68,21 @@ def process_run(
                 typer.echo(f"Каталог: {result['catalog']}")
             if result.get("vault_digest"):
                 typer.echo(f"Дайджест: {result['vault_digest']}")
+
+            # P2-14: ошибки сбора/обработки выводятся и влияют на exit code.
+            coll_errors = result.get("collection", {}).get("errors", [])
+            processing_failed = result.get("processing", {}).get("failed", 0)
+            if not result.get("ok", True) or coll_errors or processing_failed:
+                if coll_errors:
+                    typer.echo("", err=True)
+                    typer.echo("Ошибки сбора источников:", err=True)
+                    for err in coll_errors:
+                        typer.echo(f"  - {err}", err=True)
+                if processing_failed:
+                    typer.echo(
+                        f"Ошибок обработки очереди: {processing_failed}", err=True
+                    )
+                raise typer.Exit(code=1)
     finally:
         pipeline.close()
 
