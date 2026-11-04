@@ -2,7 +2,7 @@
 
 ## Как это работает
 
-Скрипт `collect_youtube.py` с командой `transcripts` скачивает автоматические субтитры (automatic captions) с YouTube через `yt-dlp` в формате `json3`.
+Скрипт `collect_youtube.py` с командой `transcripts` скачивает субтитры с YouTube через `yt-dlp` в формате `json3`. Сначала пробуются ручные субтитры (`--write-subs`), затем — автоматические (`--write-auto-subs`) как fallback.
 
 ### Порядок приоритета языков
 

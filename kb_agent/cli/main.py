@@ -100,7 +100,7 @@ app.command(
 app.add_typer(update_app, name="update", help="Проверка актуализации базы знаний (Этап 3)")
 
 # Команда MCP-сервера (Этап 4)
-@app.command(name="mcp-serve", help="Запустить MCP-сервер для внешних агентов (read-only)")
+@app.command(name="mcp-serve", help="Запустить MCP-сервер для внешних агентов (чтение + pending-запись с подтверждением через CLI)")
 def mcp_serve() -> None:
     """Запускает MCP-сервер через stdio для доступа внешних агентов."""
     import asyncio

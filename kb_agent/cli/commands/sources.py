@@ -1,10 +1,14 @@
 """Команды управления источниками (Этап 4/5).
 
-kb-agent sources list                 — показать все источники (из sources.yaml)
-kb-agent sources add <тип> <URL>      — добавить источник (pending → confirm)
-kb-agent sources remove <source_id>   — удалить источник (pending → confirm)
-kb-agent sources enable <source_id>   — включить источник (pending → confirm)
-kb-agent sources disable <source_id>  — выключить источник (pending → confirm)
+kb-agent sources list                 — показать все источники (из SQLite canonical store)
+kb-agent sources add <тип> <URL>      — добавить источник сразу в каноническое хранилище
+kb-agent sources remove <source_id>   — удалить источник из канонического хранилища
+kb-agent sources enable <source_id>   — включить источник в каноническом хранилище
+kb-agent sources disable <source_id>  — выключить источник в каноническом хранилище
+
+Изменения, пришедшие из MCP-инструментов (агент), создают pending-запрос —
+его нужно подтвердить командой `kb-agent confirm <id>`. CLI-команды ниже
+меняют источники немедленно.
 """
 
 from __future__ import annotations
