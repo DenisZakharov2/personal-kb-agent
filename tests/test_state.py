@@ -46,6 +46,37 @@ class TestStateIndexNoteDedup:
         ).fetchone()
         assert notes_rows["cnt"] == 1
 
+    def test_rebuild_fts_restores_index_from_notes(self, config, state):
+        """rebuild_fts перестраивает notes_fts из таблицы notes."""
+        state.index_note(
+            note_id="note-rebuild-1",
+            title="Первая",
+            tags="тэг1",
+            topic="Тема",
+            content="содержимое первой заметки",
+        )
+        state.index_note(
+            note_id="note-rebuild-2",
+            title="Вторая",
+            tags="тэг2",
+            topic="Тема",
+            content="содержимое второй заметки",
+        )
+
+        # Очищаем FTS вручную, как после частичного сбоя
+        conn = state.connect()
+        conn.execute("DELETE FROM notes_fts")
+        conn.commit()
+        assert conn.execute("SELECT COUNT(*) FROM notes_fts").fetchone()[0] == 0
+
+        count = state.rebuild_fts()
+        assert count == 2
+
+        rows = conn.execute(
+            "SELECT COUNT(*) AS cnt FROM notes_fts"
+        ).fetchone()
+        assert rows["cnt"] == 2
+
     def test_revision_increments_on_reindex(self, config, state):
         """revision увеличивается при повторной индексации того же note_id."""
         state.index_note(
