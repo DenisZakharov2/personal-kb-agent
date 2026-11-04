@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from kb_agent.sources.youtube import _fetch_transcript, _collect_one_channel
+from kb_agent.sources.youtube import _fetch_transcript, _collect_one_channel, _ensure_yt_dlp
 
 
 class TestYouTubeNameError:
@@ -181,3 +181,18 @@ class TestYouTubePublishedAt:
         ).fetchone()
         assert row is not None
         assert row["published_at"] == "20260105"
+
+
+class TestYouTubeBinaryCheck:
+    """P1-09: проверка наличия бинаря yt-dlp с понятной ошибкой."""
+
+    @patch("kb_agent.sources.youtube.shutil.which", return_value="/usr/bin/yt-dlp")
+    def test_ensure_yt_dlp_present(self, mock_which):
+        """Если yt-dlp есть в PATH, проверка проходит без ошибки."""
+        _ensure_yt_dlp()  # не должно вызывать исключение
+
+    @patch("kb_agent.sources.youtube.shutil.which", return_value=None)
+    def test_ensure_yt_dlp_missing_clear_error(self, mock_which):
+        """Если yt-dlp отсутствует — ошибка с подсказкой установки."""
+        with pytest.raises(RuntimeError, match="yt-dlp"):
+            _ensure_yt_dlp()
