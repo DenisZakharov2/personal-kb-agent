@@ -2,34 +2,43 @@
 
 Чтение настроек из переменных окружения и файла .env (вручную, без python-dotenv).
 Все пути и параметры валидируются через Pydantic v2.
+
+Упакованные ресурсы (промпты, примеры конфигурации) читаются через
+importlib.resources из пакета kb_agent.resources. Пользовательские данные
+(vault, БД, профиль, источники) размещаются в data_dir (по умолчанию
+PROJECT_ROOT/data при установке из исходников, или KB_DATA_DIR при установке
+через wheel).
 """
 
 from __future__ import annotations
 
 import os
+from importlib import resources as importlib_resources
 from pathlib import Path
 from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-# Корень проекта: два уровня выше от этого файла (kb_agent/config.py -> kb_agent/ -> корень)
+# Корень проекта (для установки из исходников). При установке через wheel
+# PROJECT_ROOT указывает в site-packages, поэтому пользовательские данные
+# должны браться из KB_DATA_DIR / data_dir, а не отсюда.
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
+# Пакет с ресурсами (промпты, примеры конфигов), доставляемый с wheel
+RESOURCES_PACKAGE = "kb_agent.resources"
+
 # Пути по умолчанию
-DEFAULT_VAULT_PATH = Path("/home/anony/Documents/Личное/База знаний")
+DEFAULT_VAULT_PATH = Path("~/База знаний").expanduser()
 DEFAULT_DATA_DIR = PROJECT_ROOT / "data"
 DEFAULT_DB_PATH = DEFAULT_DATA_DIR / "state.db"
 DEFAULT_SOURCES_PATH = DEFAULT_DATA_DIR / "sources.yaml"
 DEFAULT_PROFILE_PATH = DEFAULT_DATA_DIR / "user_profile.yaml"
 DEFAULT_LOG_PATH = DEFAULT_DATA_DIR / "kb_agent.log"
-DEFAULT_PROMPTS_DIR = PROJECT_ROOT / "config" / "prompts"
+DEFAULT_PROMPTS_DIR = PROJECT_ROOT / "config" / "prompts"  # fallback для исходников
 
 
 def _read_env_file(path: Path) -> dict[str, str]:
-    """Читает .env файл вручную (без библиотеки python-dotenv).
-
-    Возвращает словарь переменных. Не бросает исключений, если файла нет.
-    """
+    """Читает .env файл вручную (без библиотеки python-dotenv)."""
     env_vars: dict[str, str] = {}
     if not path.exists():
         return env_vars
@@ -49,6 +58,15 @@ def _read_env_file(path: Path) -> dict[str, str]:
         if key:
             env_vars[key] = value
     return env_vars
+
+
+def _resource_path(package: str, resource_name: str) -> Optional[Path]:
+    """Возвращает путь к упакованному ресурсу через importlib.resources."""
+    try:
+        with importlib_resources.files(package).joinpath(resource_name) as ref:
+            return Path(ref)
+    except (FileNotFoundError, ModuleNotFoundError, ImportError, TypeError):
+        return None
 
 
 class AppConfig(BaseModel):
@@ -111,6 +129,9 @@ def load_config(env_file: Optional[str] = None) -> AppConfig:
     """Загружает конфигурацию.
 
     Приоритет: переменные окружения > файл .env > значения по умолчанию.
+
+    Если задан KB_DATA_DIR, все производные пути (db, sources, profile, log)
+    вычисляются относительно него, если не заданы явно.
     """
     env_vars: dict[str, str] = {}
 
@@ -154,4 +175,35 @@ def load_config(env_file: Optional[str] = None) -> AppConfig:
         elif env_name in env_vars:
             kwargs[field_name] = env_vars[env_name]
 
-    return AppConfig(**kwargs)
+    config = AppConfig(**kwargs)
+
+    # Если задан KB_DATA_DIR, вычисляем производные пути относительно него,
+    # если они не заданы явно через переменные окружения.
+    if "KB_DATA_DIR" in os.environ or "KB_DATA_DIR" in env_vars:
+        data_dir = config.data_dir
+        if "KB_DB_PATH" not in os.environ and "KB_DB_PATH" not in env_vars:
+            config.db_path = data_dir / "state.db"
+        if "KB_SOURCES_PATH" not in os.environ and "KB_SOURCES_PATH" not in env_vars:
+            config.sources_path = data_dir / "sources.yaml"
+        if "KB_PROFILE_PATH" not in os.environ and "KB_PROFILE_PATH" not in env_vars:
+            config.profile_path = data_dir / "user_profile.yaml"
+        if "KB_LOG_PATH" not in os.environ and "KB_LOG_PATH" not in env_vars:
+            config.log_path = data_dir / "kb_agent.log"
+
+    return config
+
+
+def get_prompt_path(prompt_name: str) -> Optional[Path]:
+    """Возвращает путь к упакованному промпту через importlib.resources.
+
+    Сначала ищет в kb_agent.resources/prompts, затем в config/prompts
+    (для разработки из исходников).
+    """
+    path = _resource_path(RESOURCES_PACKAGE, f"prompts/{prompt_name}")
+    if path is not None:
+        return path
+    # Fallback для разработки из исходников
+    fallback = PROJECT_ROOT / "config" / "prompts" / prompt_name
+    if fallback.exists():
+        return fallback
+    return None

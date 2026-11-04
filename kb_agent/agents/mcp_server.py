@@ -17,6 +17,8 @@ from mcp.server.stdio import stdio_server
 from mcp.types import (
     TextContent,
     Tool,
+    ServerCapabilities,
+    ToolsCapability,
 )
 
 from kb_agent.config import load_config
@@ -165,20 +167,6 @@ async def handle_list_tools() -> list[Tool]:
                     },
                 },
                 "required": ["prompt_name"],
-            },
-        ),
-        Tool(
-            name="kb_confirm_change",
-            description="Подтвердить и применить pending-запрос write-операции (человеческое подтверждение).",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "change_id": {
-                        "type": "string",
-                        "description": "Идентификатор pending-запроса (change_id)",
-                    },
-                },
-                "required": ["change_id"],
             },
         ),
     ]
@@ -365,31 +353,6 @@ async def handle_call_tool(name: str, arguments: dict[str, Any]) -> list[TextCon
             ]
             return [TextContent(type="text", text="\n".join(lines))]
 
-        elif name == "kb_confirm_change":
-            change_id = arguments.get("change_id", "")
-            pm = PendingManager(state)
-            success = pm.confirm_change(change_id, confirmed_by="user")
-            change = pm.get_change(change_id)
-            if not change:
-                return [TextContent(type="text", text=f"Pending-запрос с change_id {change_id} не найден.")]
-            if success:
-                lines = [
-                    f"## Подтверждено и применено: {change_id}",
-                    f"Действие: {change['action']}",
-                    f"Сущность: {change['entity_type']} / {change['entity_id']}",
-                    "Статус: applied",
-                ]
-                return [TextContent(type="text", text="\n".join(lines))]
-            else:
-                if change["status"] != "pending":
-                    return [
-                        TextContent(
-                            type="text",
-                            text=f"Pending-запрос {change_id} уже имеет статус {change['status']} и не может быть подтверждён повторно.",
-                        )
-                    ]
-                return [TextContent(type="text", text=f"Ошибка при применении pending-запроса {change_id}.")]
-
         else:
             return [TextContent(type="text", text=f"Неизвестный инструмент: {name}")]
 
@@ -406,7 +369,9 @@ async def main() -> None:
             InitializationOptions(
                 server_name="kb-agent",
                 server_version="0.1.0",
-                capabilities={},
+                capabilities=ServerCapabilities(
+                    tools=ToolsCapability(listChanged=False),
+                ),
             ),
         )
 

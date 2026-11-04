@@ -1,0 +1,34 @@
+# Профиль пользователя базы знаний ТГК.
+# Создаётся вводным интервью (kb-agent interview init) или заполняется вручную через этот файл.
+# При развёртывании копируется в data/user_profile.yaml.
+
+version: 1
+
+user:
+  name: null
+
+goals:
+  - Систематизировать материалы по ИИ-агентам и автоматизации для работы и саморазвития
+
+tasks:
+  - Быстро находить релевантную информацию по ранее собранным источникам
+  - Отслеживать новые инсайты и связи между источниками
+
+topics:
+  - ИИ-агенты и автономные системы
+  - LLM и API
+  - Автоматизация процессов
+
+sources:
+  - tg_ragnarokzone
+  - yt_example_channel
+
+collection:
+  frequency: daily
+  time: "10:00"
+
+system: Obsidian
+
+core_materials:
+  - path: /home/user/Documents/KB_core
+    imported: false

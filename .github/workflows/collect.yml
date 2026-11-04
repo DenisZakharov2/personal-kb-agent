@@ -8,6 +8,9 @@ on:
 jobs:
   collect:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
@@ -19,31 +22,17 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install yt-dlp requests beautifulsoup4
+          pip install ".[youtube]"
 
       - name: Configure environment
         run: |
           cp .env.example .env
           echo "KB_VAULT_PATH=${{ secrets.KB_VAULT_PATH }}" >> .env
           echo "KB_TELEGRAM_CHANNELS=${{ secrets.KB_TELEGRAM_CHANNELS }}" >> .env
-          echo "KB_YT_CHANNEL_URL=${{ secrets.KB_YT_CHANNEL_URL }}" >> .env
+          echo "KB_YOUTUBE_CHANNELS=${{ secrets.KB_YOUTUBE_CHANNELS }}" >> .env
 
-      - name: Collect Telegram
-        run: python3 scripts/collect_telegram.py
+      - name: Run kb-agent pipeline (сбор + суммаризация + индексация)
+        run: kb-agent process run
 
-      - name: Collect YouTube metadata
-        run: python3 scripts/collect_youtube.py collect
-
-      - name: Collect YouTube transcripts
-        run: python3 scripts/collect_youtube.py transcripts
-
-      - name: Archive queue and transcripts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: kb-queue
-          path: |
-            scripts/_queue.jsonl
-            scripts/_done.txt
-            scripts/_trans_done.txt
-            scripts/_transcripts/
+      - name: Show status
+        run: kb-agent process status

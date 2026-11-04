@@ -107,10 +107,10 @@ def _fetch_transcript(video_id: str, video_url: str, langs: list[str]) -> Option
         try:
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
         except subprocess.TimeoutExpired:
-            logger.warning("  %s | таймаут при скачивании субтитров (%s)", vid, lang)
+            logger.warning("  %s | таймаут при скачивании субтитров (%s)", video_id, lang)
             continue
         if result.returncode != 0:
-            logger.warning("  %s | yt-dlp ошибка (%s): %s", vid, lang, result.stderr[:200])
+            logger.warning("  %s | yt-dlp ошибка (%s): %s", video_id, lang, result.stderr[:200])
             continue
 
         # Ищем файл субтитров нужного языка
@@ -120,7 +120,7 @@ def _fetch_transcript(video_id: str, video_url: str, langs: list[str]) -> Option
             # Пробуем любой json3 файл для этого видео
             any_candidates = list(tmp.glob(f"{video_id}.*.json3"))
             if not any_candidates:
-                logger.warning("  %s | субтитры не найдены (%s)", vid, lang)
+                logger.warning("  %s | субтитры не найдены (%s)", video_id, lang)
                 continue
             raw_path = any_candidates[0]
         else:
@@ -129,15 +129,15 @@ def _fetch_transcript(video_id: str, video_url: str, langs: list[str]) -> Option
         try:
             raw = raw_path.read_text(encoding="utf-8", errors="replace")
         except Exception as exc:
-            logger.warning("  %s | ошибка чтения субтитров: %s", vid, exc)
+            logger.warning("  %s | ошибка чтения субтитров: %s", video_id, exc)
             continue
 
         segments = _parse_json3_subtitles(raw)
         if segments:
-            logger.info("  %s | субтитры найдены (%s, %d сегментов)", vid, lang, len(segments))
+            logger.info("  %s | субтитры найдены (%s, %d сегментов)", video_id, lang, len(segments))
             return _format_transcript(segments)
         else:
-            logger.warning("  %s | субтитры пустые (%s)", vid, lang)
+            logger.warning("  %s | субтитры пустые (%s)", video_id, lang)
     return None
 
 
@@ -183,7 +183,10 @@ def _collect_one_channel(
     skipped_for_channel = 0
     subs_for_channel = 0
 
-    for v in videos:
+    # Применяем limit на ранней стадии — не скачиваем лишнее
+    videos_to_process = videos[:limit] if limit and limit > 0 else videos
+
+    for v in videos_to_process:
         vid = v.get("id", "")
         if not vid:
             continue
@@ -197,13 +200,13 @@ def _collect_one_channel(
             (title + raw_text).encode("utf-8")
         ).hexdigest()
 
-        # Проверка на déjà vu (по external_id)
+        # Проверка на déjà vu (по external_id) ДО скачивания субтитров
         if state.is_processed(external_id):
             skipped_for_channel += 1
             continue
 
         # Скачиваем субтитры
-        transcript_text = _fetch_transcript(vid, canonical_url, langs)
+        transcript_text = _fetch_transcript(video_id=vid, video_url=canonical_url, langs=langs)
         if transcript_text:
             raw_text += "\n\n--- ТРАНСКРИПЦИЯ ---\n" + transcript_text
             subs_for_channel += 1
@@ -221,6 +224,9 @@ def _collect_one_channel(
         if queue_id is None:
             skipped_for_channel += 1
             continue
+
+        # Помечаем как обработанный, чтобы при следующем запуске не качать снова
+        state.mark_processed_key(external_id)
         new_for_channel += 1
 
         # Пауза между запросами, чтобы не заблокировали
