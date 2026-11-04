@@ -18,6 +18,12 @@ logger = setup_logger("kb_agent.cli.confirm")
 
 def confirm_command(
     change_id: str = typer.Argument(..., help="Идентификатор pending-запроса (change_id)"),
+    revision: int = typer.Option(
+        ...,
+        "--revision",
+        "-r",
+        help="Ревизия pending-запроса для оптимистичной блокировки (см. kb-agent pending)",
+    ),
     json_output: bool = typer.Option(
         False,
         "--json",
@@ -31,7 +37,7 @@ def confirm_command(
     try:
         state.init_db()
         pm = PendingManager(state)
-        success = pm.confirm_change(change_id, confirmed_by="user")
+        success = pm.confirm_change(change_id, revision=revision, confirmed_by="user")
         change = pm.get_change(change_id)
         if not change:
             result = {

@@ -1,12 +1,13 @@
 """Управление состоянием приложения в SQLite (Этап 1).
 
 Каноническое изменяемое хранилище — один SQLite-файл; также меняются файлы vault и sources.yaml.
-Таблицы: raw_queue, notes_fts (FTS5), note_links, feedback, prompt_history, processed,
-pending_changes (Этап 4), sources (Этап 4).
+Таблицы: raw_queue, notes (канонические метаданные заметок), notes_fts (FTS5-проекция),
+note_links, feedback, prompt_history, processed, pending_changes (Этап 4), sources (Этап 4).
 """
 
 from __future__ import annotations
 
+import hashlib
 import re
 import sqlite3
 from datetime import datetime, timedelta, timezone
@@ -200,6 +201,34 @@ _SCHEMA = [
         """
         ALTER TABLE raw_queue ADD COLUMN processing_started_at TEXT;
         ALTER TABLE raw_queue ADD COLUMN lease_expires_at TEXT;
+        """,
+    ),
+    (
+        12,
+        """
+        CREATE TABLE IF NOT EXISTS notes (
+            note_id TEXT PRIMARY KEY,
+            title TEXT,
+            topic TEXT,
+            tags TEXT,
+            source_id TEXT,
+            external_id TEXT,
+            canonical_url TEXT,
+            file_path TEXT,
+            content_hash TEXT,
+            revision INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        """,
+    ),
+    (
+        13,
+        """
+        ALTER TABLE pending_changes ADD COLUMN revision INTEGER DEFAULT 0;
+        ALTER TABLE pending_changes ADD COLUMN expires_at TEXT;
+        ALTER TABLE pending_changes ADD COLUMN reject_reason TEXT;
+        ALTER TABLE pending_changes ADD COLUMN content_hash TEXT;
         """,
     ),
 ]
@@ -398,19 +427,80 @@ class StateManager:
         )
         conn.commit()
 
-    def index_note(self, note_id: str, title: str, tags: str, topic: str, content: str) -> None:
-        conn = self.connect()
-        conn.execute("DELETE FROM notes_fts WHERE note_id = ?", (note_id,))
-        conn.execute(
-            """
-            INSERT INTO notes_fts (note_id, title, tags, topic, content)
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            (note_id, title, tags, topic, content),
-        )
-        conn.commit()
+    def index_note(
+        self,
+        note_id: str,
+        title: str,
+        tags: str,
+        topic: str,
+        content: str,
+        *,
+        source_id: Optional[str] = None,
+        external_id: Optional[str] = None,
+        canonical_url: Optional[str] = None,
+        file_path: Optional[str] = None,
+        content_hash: Optional[str] = None,
+        revision: int = 1,
+        conn: Optional[sqlite3.Connection] = None,
+    ) -> None:
+        """Индексирует заметку в обе таблицы (notes + notes_fts) в одной транзакции.
+
+        ``notes`` — каноническое хранилище метаданных, ``notes_fts`` — rebuildable
+        проекция для полнотекстового поиска. При повторной индексации того же
+        note_id запись в notes обновляется (revision увеличивается).
+        """
+        c = conn or self.connect()
+        own = conn is None
+        try:
+            if own:
+                c.execute("BEGIN IMMEDIATE")
+            c.execute(
+                """
+                INSERT INTO notes (note_id, title, tags, topic, source_id, external_id, canonical_url,
+                                   file_path, content_hash, revision, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+                ON CONFLICT(note_id) DO UPDATE SET
+                    title = excluded.title,
+                    tags = excluded.tags,
+                    topic = excluded.topic,
+                    source_id = excluded.source_id,
+                    external_id = excluded.external_id,
+                    canonical_url = excluded.canonical_url,
+                    file_path = excluded.file_path,
+                    content_hash = excluded.content_hash,
+                    revision = notes.revision + 1,
+                    updated_at = datetime('now')
+                """,
+                (
+                    note_id,
+                    title,
+                    tags,
+                    topic,
+                    source_id,
+                    external_id,
+                    canonical_url,
+                    file_path,
+                    content_hash,
+                    revision,
+                ),
+            )
+            c.execute("DELETE FROM notes_fts WHERE note_id = ?", (note_id,))
+            c.execute(
+                """
+                INSERT INTO notes_fts (note_id, title, tags, topic, content)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (note_id, title, tags, topic, content),
+            )
+            if own:
+                c.commit()
+        except Exception:
+            if own:
+                c.rollback()
+            raise
 
     def remove_from_index(self, note_id: str) -> None:
+        """Удаляет заметку из FTS-проекции (запись в notes сохраняется)."""
         conn = self.connect()
         conn.execute("DELETE FROM notes_fts WHERE note_id = ?", (note_id,))
         conn.commit()
@@ -448,13 +538,20 @@ class StateManager:
         return [dict(row) for row in rows]
 
     def get_note(self, note_id: str) -> Optional[dict]:
-        """Возвращает заметку из FTS5-индекса по её ID (или None)."""
+        """Возвращает заметку по ID.
+
+        Метаданные берутся из канонической таблицы ``notes``, содержимое —
+        из FTS-проекции ``notes_fts`` (единственного хранилища контента).
+        """
         conn = self.connect()
         row = conn.execute(
             """
-            SELECT note_id, title, tags, topic, content
-            FROM notes_fts
-            WHERE note_id = ?
+            SELECT n.note_id, n.title, n.tags, n.topic, n.source_id, n.external_id,
+                   n.canonical_url, n.file_path, n.content_hash, n.revision,
+                   n.created_at, n.updated_at, f.content
+            FROM notes n
+            LEFT JOIN notes_fts f ON f.note_id = n.note_id
+            WHERE n.note_id = ?
             LIMIT 1
             """,
             (note_id,),
@@ -492,16 +589,19 @@ class StateManager:
         is_active: bool = False,
         approved_by: Optional[str] = None,
         reverted_from: Optional[int] = None,
+        conn: Optional[sqlite3.Connection] = None,
     ) -> int:
-        conn = self.connect()
-        cur = conn.execute(
+        c = conn or self.connect()
+        own = conn is None
+        cur = c.execute(
             """
             INSERT INTO prompt_history (prompt_name, version, content, is_active, approved_by, reverted_from)
             VALUES (?, ?, ?, ?, ?, ?)
             """,
             (prompt_name, version, content, int(is_active), approved_by, reverted_from),
         )
-        conn.commit()
+        if own:
+            c.commit()
         return cur.lastrowid
 
     def get_active_prompt(self, prompt_name: str) -> Optional[dict]:
@@ -563,21 +663,25 @@ class StateManager:
         source_type: str,
         channel: str,
         enabled: bool = True,
+        conn: Optional[sqlite3.Connection] = None,
     ) -> Optional[int]:
         """Добавляет новый источник. Возвращает ID записи или None, если уже существует."""
-        conn = self.connect()
+        c = conn or self.connect()
+        own = conn is None
         try:
-            cur = conn.execute(
+            cur = c.execute(
                 """
                 INSERT INTO sources (source_id, source_type, channel, enabled)
                 VALUES (?, ?, ?, ?)
                 """,
                 (source_id, source_type, channel, int(enabled)),
             )
-            conn.commit()
+            if own:
+                c.commit()
             return cur.lastrowid
         except sqlite3.IntegrityError:
-            conn.rollback()
+            if own:
+                c.rollback()
             return None
 
     def get_source(self, source_id: str) -> Optional[dict]:
@@ -595,9 +699,10 @@ class StateManager:
             rows = conn.execute("SELECT * FROM sources ORDER BY added_at").fetchall()
         return [dict(row) for row in rows]
 
-    def set_source_enabled(self, source_id: str, enabled: bool) -> bool:
-        conn = self.connect()
-        cur = conn.execute(
+    def set_source_enabled(self, source_id: str, enabled: bool, conn: Optional[sqlite3.Connection] = None) -> bool:
+        c = conn or self.connect()
+        own = conn is None
+        cur = c.execute(
             """
             UPDATE sources
             SET enabled = ?, updated_at = datetime('now')
@@ -605,19 +710,22 @@ class StateManager:
             """,
             (int(enabled), source_id),
         )
-        conn.commit()
+        if own:
+            c.commit()
         return cur.rowcount > 0
 
-    def remove_source(self, source_id: str) -> bool:
-        conn = self.connect()
-        cur = conn.execute("DELETE FROM sources WHERE source_id = ?", (source_id,))
-        conn.commit()
+    def remove_source(self, source_id: str, conn: Optional[sqlite3.Connection] = None) -> bool:
+        c = conn or self.connect()
+        own = conn is None
+        cur = c.execute("DELETE FROM sources WHERE source_id = ?", (source_id,))
+        if own:
+            c.commit()
         return cur.rowcount > 0
 
     def stats(self) -> dict:
         conn = self.connect()
         result: dict = {}
-        for table in ("raw_queue", "feedback", "prompt_history", "processed", "sources", "pending_changes"):
+        for table in ("raw_queue", "notes", "feedback", "prompt_history", "processed", "sources", "pending_changes"):
             row = conn.execute(f"SELECT COUNT(*) AS c FROM {table}").fetchone()
             result[table] = row["c"] if row else 0
         row = conn.execute("SELECT state, COUNT(*) AS c FROM raw_queue GROUP BY state").fetchall()

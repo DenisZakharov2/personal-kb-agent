@@ -22,7 +22,13 @@ import typer
 
 from kb_agent import __version__
 from kb_agent.cli.commands.interview import app as interview_app
-from kb_agent.cli.commands.process import app as process_app
+from kb_agent.cli.commands.process import (
+    app as process_app,
+    process_backup,
+    process_doctor,
+    process_reindex,
+    process_retry,
+)
 from kb_agent.cli.commands.confirm import confirm_command
 from kb_agent.cli.commands.pending import pending_command
 from kb_agent.cli.commands.feedback import app as feedback_app
@@ -100,6 +106,17 @@ def mcp_serve() -> None:
     import asyncio
 
     asyncio.run(mcp_main())
+
+
+# Команды аудита/восстановления (Волна 1) — доступны как kb-agent <команда>
+app.command(name="reindex", help="Перестроить notes_fts из файлов vault (frontmatter)")(
+    process_reindex
+)
+app.command(name="doctor", help="Проверка целостности базы знаний (раздел 9 аудита)")(
+    process_doctor
+)
+app.command(name="retry", help="Повторная обработка элемента очереди")(process_retry)
+app.command(name="backup", help="Экспорт SQLite + vault в zip-архив")(process_backup)
 
 
 if __name__ == "__main__":

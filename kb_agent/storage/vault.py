@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import re
 from pathlib import Path
 from typing import Optional
@@ -117,3 +118,52 @@ class VaultManager:
     def read_note(self, path: Path) -> str:
         """Читает содержимое заметки."""
         return path.read_text(encoding="utf-8")
+
+    def parse_note(self, path: Path) -> dict:
+        """Разбирает .md-файл заметки на frontmatter и тело.
+
+        Возвращает словарь с полями: note_id, title, tags, topic, source,
+        source_id, external_id, url, published_at, received_at, date_saved,
+        previous_note_id, frontmatter_schema_version, content, content_hash.
+        Если note_id отсутствует во frontmatter, возвращается пустая строка —
+        caller должен сгенерировать идентификатор самостоятельно.
+        """
+        text = path.read_text(encoding="utf-8")
+        data: dict = {}
+        body = text
+
+        if text.startswith("---\n"):
+            _, _, rest = text.partition("---\n")
+            frontmatter_text, _, body = rest.partition("---\n")
+            try:
+                loaded = yaml.safe_load(frontmatter_text)
+                if isinstance(loaded, dict):
+                    data = loaded
+            except yaml.YAMLError as exc:  # noqa: BLE001
+                logger.warning("Не удалось разобрать frontmatter %s: %s", path, exc)
+
+        tags = data.get("tags", [])
+        if isinstance(tags, str):
+            tags = [t.strip() for t in tags.split(",") if t.strip()]
+        elif not isinstance(tags, list):
+            tags = [tags] if tags is not None else []
+        tags = [str(t).strip() for t in tags if str(t).strip()]
+
+        content = body.strip()
+        return {
+            "note_id": data.get("note_id") or "",
+            "title": data.get("title") or path.stem,
+            "tags": ",".join(tags),
+            "topic": data.get("topic") or "Общее",
+            "source": data.get("source", ""),
+            "source_id": data.get("source_id") or "",
+            "external_id": data.get("external_id") or "",
+            "url": data.get("url") or data.get("canonical_url") or "",
+            "published_at": data.get("published_at"),
+            "received_at": data.get("received_at"),
+            "date_saved": data.get("date_saved"),
+            "previous_note_id": data.get("previous_note_id"),
+            "frontmatter_schema_version": data.get("frontmatter_schema_version"),
+            "content": content,
+            "content_hash": hashlib.sha256(content.encode("utf-8")).hexdigest(),
+        }
