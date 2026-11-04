@@ -258,6 +258,28 @@ _SCHEMA = [
         DROP TABLE pending_changes_old;
         """,
     ),
+    (
+        14,
+        """
+        CREATE TABLE IF NOT EXISTS prompt_proposals (
+            proposal_id TEXT PRIMARY KEY,
+            target TEXT NOT NULL CHECK (target IN ('prompt','config','source')),
+            target_name TEXT NOT NULL,
+            current_version INTEGER,
+            proposed_version INTEGER,
+            diff TEXT,
+            reason TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'proposed'
+                CHECK (status IN ('proposed','confirmed','applied','rejected','failed')),
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            confirmed_at TEXT,
+            applied_at TEXT,
+            confirmed_by TEXT,
+            test_passed INTEGER NOT NULL DEFAULT 0,
+            eval_set_id TEXT
+        );
+        """,
+    ),
 ]
 
 SCHEMA_VERSION = max(v for v, _ in _SCHEMA)
@@ -748,6 +770,151 @@ class StateManager:
         if own:
             c.commit()
         return cur.rowcount > 0
+
+    # ---- Предложения самоулучшения (Этап 5) ----
+
+    def save_proposal(
+        self,
+        proposal_id: str,
+        target: str,
+        target_name: str,
+        current_version: Optional[int],
+        proposed_version: Optional[int],
+        diff: str,
+        reason: str,
+        eval_set_id: Optional[str] = None,
+        conn: Optional[sqlite3.Connection] = None,
+    ) -> None:
+        """Сохраняет предложение улучшения в таблицу prompt_proposals."""
+        c = conn or self.connect()
+        own = conn is None
+        try:
+            c.execute(
+                """
+                INSERT INTO prompt_proposals
+                    (proposal_id, target, target_name, current_version, proposed_version,
+                     diff, reason, status, eval_set_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'proposed', ?)
+                """,
+                (
+                    proposal_id,
+                    target,
+                    target_name,
+                    current_version,
+                    proposed_version,
+                    diff,
+                    reason,
+                    eval_set_id,
+                ),
+            )
+            if own:
+                c.commit()
+        except Exception:
+            if own:
+                c.rollback()
+            raise
+
+    def get_proposal(self, proposal_id: str) -> Optional[dict]:
+        """Возвращает предложение по ID или None."""
+        conn = self.connect()
+        row = conn.execute(
+            "SELECT * FROM prompt_proposals WHERE proposal_id = ?",
+            (proposal_id,),
+        ).fetchone()
+        return dict(row) if row else None
+
+    def list_proposals(self, status: str = "proposed") -> list[dict]:
+        """Возвращает список предложений со статусом ``status``."""
+        allowed = ("proposed", "confirmed", "applied", "rejected", "failed")
+        if status not in allowed:
+            raise ValueError(f"Недопустимый статус: {status}")
+        conn = self.connect()
+        rows = conn.execute(
+            """
+            SELECT * FROM prompt_proposals
+            WHERE status = ?
+            ORDER BY created_at DESC
+            """,
+            (status,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def update_proposal(
+        self,
+        proposal_id: str,
+        conn: Optional[sqlite3.Connection] = None,
+        **fields: object,
+    ) -> bool:
+        """Обновляет поля предложения (status, test_passed, confirmed_at и т.п.)."""
+        if not fields:
+            return False
+        c = conn or self.connect()
+        own = conn is None
+        try:
+            set_clause = ", ".join(f"{k} = ?" for k in fields)
+            values = list(fields.values()) + [proposal_id]
+            cur = c.execute(
+                f"UPDATE prompt_proposals SET {set_clause} WHERE proposal_id = ?",
+                values,
+            )
+            if own:
+                c.commit()
+            return cur.rowcount > 0
+        except Exception:
+            if own:
+                c.rollback()
+            raise
+
+    def activate_prompt_version(
+        self,
+        prompt_name: str,
+        version: int,
+        confirmed_by: str = "user",
+        conn: Optional[sqlite3.Connection] = None,
+    ) -> bool:
+        """Атомарно активирует версию промпта: снимает is_active со старых и
+        ставит её на указанную в одной транзакции.
+
+        Возвращает False, если целевая версия не найдена.
+        """
+        c = conn or self.connect()
+        own = conn is None
+        try:
+            c.execute("BEGIN IMMEDIATE")
+            target = c.execute(
+                """
+                SELECT 1 FROM prompt_history
+                WHERE prompt_name = ? AND version = ?
+                """,
+                (prompt_name, version),
+            ).fetchone()
+            if target is None:
+                if own:
+                    c.rollback()
+                return False
+            c.execute(
+                "UPDATE prompt_history SET is_active = 0 WHERE prompt_name = ?",
+                (prompt_name,),
+            )
+            c.execute(
+                """
+                UPDATE prompt_history
+                SET is_active = 1
+                WHERE prompt_name = ? AND version = ?
+                """,
+                (prompt_name, version),
+            )
+            if own:
+                c.commit()
+            logger.info(
+                "Промпт %s: версия %s активирована (подтвердил %s)",
+                prompt_name, version, confirmed_by,
+            )
+            return True
+        except Exception:
+            if own:
+                c.rollback()
+            raise
 
     def stats(self) -> dict:
         conn = self.connect()

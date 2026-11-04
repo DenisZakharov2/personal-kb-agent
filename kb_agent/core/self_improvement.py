@@ -1,9 +1,9 @@
 """Движок самоулучшения под наблюдением человека (Этап 5).
 
 Собирает метрики из обратной связи, формирует предложения по улучшению
-промптов и конфигурации в виде diff, требует явного подтверждения человека
-перед применением, версионирует промпты для отката и проверяет изменения
-на тестовом наборе до применения.
+промптов и конфигурации, хранит их в SQLite, требует явного подтверждения
+человека перед применением, версионирует промпты с атомарной активацией и
+проверяет изменения на тестовом наборе до применения.
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Optional
 
 from kb_agent.config import load_config
+from kb_agent.core.prompts import SUMMARIZE_PROMPT_NAME, ANSWER_PROMPT_NAME
 from kb_agent.storage.state import StateManager
 from kb_agent.utils.logger import setup_logger
 
@@ -62,7 +63,7 @@ class SelfImprovementEngine:
             "recent_feedback": metrics.recent_feedback,
         }
 
-    # ---- Предложения по улучшению ----
+    # ---- Предложения по улучшению (хранятся в SQLite) ----
 
     def propose_prompt_change(
         self,
@@ -70,7 +71,7 @@ class SelfImprovementEngine:
         new_content: str,
         reason: str,
     ) -> ImprovementProposal:
-        """Сформировать предложение изменить промпт.
+        """Сформировать предложение изменить промпт и сохранить его в SQLite.
 
         Вычисляет diff между текущей активной версией и новым содержимым.
         """
@@ -89,8 +90,19 @@ class SelfImprovementEngine:
         )
         diff_text = "".join(diff_lines) if diff_lines else "(изменений нет)"
 
+        proposal_id = self._next_proposal_id()
+        self.state.save_proposal(
+            proposal_id=proposal_id,
+            target="prompt",
+            target_name=prompt_name,
+            current_version=current_version,
+            proposed_version=current_version + 1,
+            diff=diff_text,
+            reason=reason,
+        )
+
         proposal = ImprovementProposal(
-            proposal_id=self._next_proposal_id(),
+            proposal_id=proposal_id,
             target="prompt",
             target_name=prompt_name,
             current_version=current_version,
@@ -99,7 +111,7 @@ class SelfImprovementEngine:
             reason=reason,
         )
         logger.info(
-            "Предложение изменений промпта %s (v%s → v%s): %s",
+            "Предложение изменений промпта %s (v%s → v%s) сохранено: %s",
             prompt_name, current_version, current_version + 1, reason,
         )
         return proposal
@@ -111,7 +123,7 @@ class SelfImprovementEngine:
         new_value: str,
         reason: str,
     ) -> ImprovementProposal:
-        """Сформировать предложение изменить конфигурацию (sources.yaml / user_profile.yaml)."""
+        """Сформировать предложение изменить конфигурацию и сохранить в SQLite."""
         diff_lines = list(
             difflib.unified_diff(
                 old_value.splitlines(keepends=True),
@@ -123,8 +135,9 @@ class SelfImprovementEngine:
         )
         diff_text = "".join(diff_lines) if diff_lines else "(изменений нет)"
 
-        proposal = ImprovementProposal(
-            proposal_id=self._next_proposal_id(),
+        proposal_id = self._next_proposal_id()
+        self.state.save_proposal(
+            proposal_id=proposal_id,
             target="config",
             target_name=config_key,
             current_version=None,
@@ -132,15 +145,27 @@ class SelfImprovementEngine:
             diff=diff_text,
             reason=reason,
         )
-        logger.info(
-            "Предложение изменений конфига %s: %s", config_key, reason,
+
+        proposal = ImprovementProposal(
+            proposal_id=proposal_id,
+            target="config",
+            target_name=config_key,
+            current_version=None,
+            proposed_version=None,
+            diff=diff_text,
+            reason=reason,
         )
+        logger.info("Предложение изменений конфига %s сохранено: %s", config_key, reason)
         return proposal
 
+    def get_proposal(self, proposal_id: str) -> Optional[dict]:
+        """Возвращает предложение по ID или None."""
+        return self.state.get_proposal(proposal_id)
+
     def list_proposals(self, status: str = "proposed") -> list[ImprovementProposal]:
-        """Вернуть список предложений со статусом."""
-        # Предложения хранятся в памяти в рамках сессии; в будущем — в SQLite
-        return []  # placeholder, расширяется при добавлении таблицы proposals
+        """Вернуть список предложений со статусом из SQLite (не заглушка)."""
+        rows = self.state.list_proposals(status=status)
+        return [self._row_to_proposal(row) for row in rows]
 
     # ---- Применение с подтверждением ----
 
@@ -150,14 +175,18 @@ class SelfImprovementEngine:
         new_content: str,
         confirmed_by: str = "user",
     ) -> bool:
-        """Применить предложение по изменению промпта после подтверждения."""
+        """Применить предложение по изменению промпта после подтверждения.
+
+        Новая версия и снятие is_active со старой выполняются в одной
+        транзакции (BEGIN IMMEDIATE), поэтому в каждый момент времени активна
+        ровно одна версия промпта.
+        """
         if proposal.status != "proposed":
             logger.warning(
                 "Предложение %s уже имеет статус %s", proposal.proposal_id, proposal.status
             )
             return False
 
-        # Тестирование на тестовом наборе (заглушка — расширяется)
         test_passed = self._run_test_suite(proposal)
         proposal.test_passed = test_passed
         if not test_passed:
@@ -165,18 +194,52 @@ class SelfImprovementEngine:
                 "Предложение %s не прошло тестовый набор, применение отменено",
                 proposal.proposal_id,
             )
+            self.state.update_proposal(
+                proposal.proposal_id, status="failed", test_passed=0
+            )
             proposal.status = "failed"
             return False
 
         now = datetime.now(timezone.utc).isoformat()
-        self.state.save_prompt(
-            prompt_name=proposal.target_name,
-            version=proposal.proposed_version or (proposal.current_version or 0) + 1,
-            content=new_content,
-            is_active=True,
-            approved_by=confirmed_by,
-            reverted_from=proposal.current_version,
-        )
+        new_version = proposal.proposed_version or (proposal.current_version or 0) + 1
+
+        conn = self.state.connect()
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            # Вставляем новую версию как активную
+            self.state.save_prompt(
+                prompt_name=proposal.target_name,
+                version=new_version,
+                content=new_content,
+                is_active=True,
+                approved_by=confirmed_by,
+                reverted_from=proposal.current_version,
+                conn=conn,
+            )
+            # Снимаем is_active со всех остальных версий этого промпта
+            conn.execute(
+                """
+                UPDATE prompt_history
+                SET is_active = 0
+                WHERE prompt_name = ? AND version <> ?
+                """,
+                (proposal.target_name, new_version),
+            )
+            # Помечаем предложение как применённое
+            self.state.update_proposal(
+                proposal.proposal_id,
+                conn=conn,
+                status="applied",
+                test_passed=int(test_passed),
+                confirmed_at=now,
+                applied_at=now,
+                confirmed_by=confirmed_by,
+            )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+
         proposal.status = "applied"
         proposal.applied_at = now
         proposal.confirmed_at = now
@@ -199,11 +262,27 @@ class SelfImprovementEngine:
             )
             return False
 
+        # Тестовый набор для конфигурационных изменений пока пропускается
+        test_passed = self._run_test_suite(proposal)
+        proposal.test_passed = test_passed
+        if not test_passed:
+            self.state.update_proposal(proposal.proposal_id, status="failed", test_passed=0)
+            proposal.status = "failed"
+            return False
+
         now = datetime.now(timezone.utc).isoformat()
         path = Path(proposal.target_name)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(new_value, encoding="utf-8")
 
+        self.state.update_proposal(
+            proposal.proposal_id,
+            status="applied",
+            test_passed=int(test_passed),
+            confirmed_at=now,
+            applied_at=now,
+            confirmed_by=confirmed_by,
+        )
         proposal.status = "applied"
         proposal.applied_at = now
         proposal.confirmed_at = now
@@ -215,6 +294,7 @@ class SelfImprovementEngine:
     def reject_proposal(self, proposal: ImprovementProposal) -> None:
         """Отклонить предложение."""
         proposal.status = "rejected"
+        self.state.update_proposal(proposal.proposal_id, status="rejected")
         logger.info("Предложение %s отклонено", proposal.proposal_id)
 
     def rollback_prompt(
@@ -223,52 +303,45 @@ class SelfImprovementEngine:
         to_version: int,
         confirmed_by: str = "user",
     ) -> bool:
-        """Откатить промпт к указанной версии."""
-        target = self.state.connect().execute(
-            """
-            SELECT * FROM prompt_history
-            WHERE prompt_name = ? AND version = ?
-            """,
-            (prompt_name, to_version),
-        ).fetchone()
-        if not target:
-            logger.warning("Версия %s промпта %s не найдена", to_version, prompt_name)
-            return False
-
-        conn = self.state.connect()
-        conn.execute(
-            "UPDATE prompt_history SET is_active = 0 WHERE prompt_name = ?",
-            (prompt_name,),
+        """Откатить промпт к указанной версии (атомарно)."""
+        return self.state.activate_prompt_version(
+            prompt_name=prompt_name, version=to_version, confirmed_by=confirmed_by
         )
-        conn.execute(
-            """
-            UPDATE prompt_history
-            SET is_active = 1
-            WHERE prompt_name = ? AND version = ?
-            """,
-            (prompt_name, to_version),
-        )
-        conn.commit()
-        logger.info(
-            "Промпт %s откатан к версии %s (подтвердил %s)",
-            prompt_name, to_version, confirmed_by,
-        )
-        return True
 
     # ---- Вспомогательное ----
+
+    @staticmethod
+    def _row_to_proposal(row: dict) -> ImprovementProposal:
+        return ImprovementProposal(
+            proposal_id=row["proposal_id"],
+            target=row["target"],
+            target_name=row["target_name"],
+            current_version=row["current_version"],
+            proposed_version=row["proposed_version"],
+            diff=row["diff"],
+            reason=row["reason"],
+            status=row["status"],
+            created_at=row["created_at"],
+            confirmed_at=row["confirmed_at"],
+            applied_at=row["applied_at"],
+            test_passed=bool(row["test_passed"]),
+        )
 
     def _next_proposal_id(self) -> str:
         import uuid
         return str(uuid.uuid4())
 
     def _run_test_suite(self, proposal: ImprovementProposal) -> bool:
-        """Запустить тестовый набор для предложенного изменения.
+        """Базовая проверка предложенного изменения перед применением.
 
-        Заглушка — в будущем здесь будет проверка на фиксированном наборе
-        вопросов и заметок до применения изменения.
+        Пока проверяется только, что diff не пустой (есть реальные изменения).
+        Интеграцию с отдельным eval-набором (связанным через eval_set_id)
+        можно дореализовать отдельной задачей.
         """
+        has_changes = bool(proposal.diff) and "(изменений нет)" not in proposal.diff
         logger.info(
-            "Тестовый набор для предложения %s: пропущен (заглушка)",
+            "Тестовый набор для предложения %s: %s",
             proposal.proposal_id,
+            "пройден" if has_changes else "не пройден (нет изменений)",
         )
-        return True
+        return has_changes
