@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
@@ -109,35 +110,40 @@ class SourceRegistry:
 
     # ---- Сохранение (YAML — только экспорт) ----
 
+    def _atomic_write_yaml(self, path: Path, data: dict) -> None:
+        """Атомарная запись YAML: во временный файл в той же директории, затем os.replace.
+
+        Защита от частичной записи при параллельном доступе или падении процесса
+        посередине записи — получатель либо видит старый файл, либо новый целиком.
+        """
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(path.name + ".tmp")
+        tmp.write_text(
+            yaml.dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8"
+        )
+        os.replace(tmp, path)
+
     def save(self) -> None:
         """Сохраняет источники в sources.yaml (экспорт, не каноническое хранилище)."""
         if self._use_sqlite:
             # SQLite уже обновлён через add/remove/set_enabled; YAML — только опциональный экспорт
             self._export_to_yaml()
             return
-        self.sources_path.parent.mkdir(parents=True, exist_ok=True)
         data = {
             "version": 1,
             "sources": [cfg.to_dict() for cfg in self._sources.values()],
         }
-        self.sources_path.write_text(
-            yaml.dump(data, allow_unicode=True, sort_keys=False),
-            encoding="utf-8",
-        )
+        self._atomic_write_yaml(self.sources_path, data)
         logger.info("Сохранено источников: %s в %s", len(self._sources), self.sources_path)
 
     def _export_to_yaml(self) -> None:
         """Экспортирует источники из SQLite в sources.yaml (для ручного редактирования)."""
         try:
-            self.sources_path.parent.mkdir(parents=True, exist_ok=True)
             data = {
                 "version": 1,
                 "sources": [cfg.to_dict() for cfg in self._sources.values()],
             }
-            self.sources_path.write_text(
-                yaml.dump(data, allow_unicode=True, sort_keys=False),
-                encoding="utf-8",
-            )
+            self._atomic_write_yaml(self.sources_path, data)
             logger.info("Экспортировано источников: %s в %s", len(self._sources), self.sources_path)
         except OSError as exc:
             logger.warning("Не удалось экспортировать sources.yaml: %s", exc)
