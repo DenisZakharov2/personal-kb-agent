@@ -16,35 +16,27 @@
 ## Обёртки совместимости
 
 В `scripts/` остались тонкие обёртки `collect_telegram.py` и `collect_youtube.py`,
-которые просто запускают одноимённые скрипты из `scripts/legacy/`. Они нужны,
-чтобы существующий workflow `.github/workflows/collect.yml` (в нём прописаны
-именно эти пути) продолжал работать.
+которые просто запускают одноимённые скрипты из `scripts/legacy/`. Они **не
+используются** актуальным workflow `.github/workflows/collect.yml` — тот теперь
+запускает установленный пакет `kb-agent process run` (SQLite-очередь, а не
+`_queue.jsonl`). Обёртки оставлены только для справки и автономного запуска.
 
 Обёртки выставляют `KB_QUEUE_DIR=scripts/`, поэтому `_queue.jsonl`, `_done.txt`,
-`_trans_done.txt` и `_transcripts/` создаются в `scripts/` — ровно там, где их
-забирает шаг `upload-artifact`. Без обёрток можно запускать напрямую:
+`_trans_done.txt` и `_transcripts/` создаются в `scripts/`. Без обёрток можно
+запускать напрямую:
 
 ```bash
 KB_QUEUE_DIR=/path/to/queue python3 scripts/legacy/collect_youtube.py list-queue
 ```
 
-## Известное ограничение workflow
+## Состояние workflow
 
-Workflow **не обновлён** (в нём остались `KB Collect`, `cp .env.example .env`
-и переменная `KB_YT_CHANNEL_URL`): у токена, которым выполняется push из этой
-среды, нет права `workflows`, GitHub отклоняет такие коммиты.
+Workflow `.github/workflows/collect.yml` обновлён:
 
-Следствие: переменные из `secrets` попадают в `.env`, который скрипты не читают
-(dotenv не используется), поэтому сбор идёт на значениях по умолчанию.
-
-Готовый обновлённый workflow (переменные через `$GITHUB_ENV`, пути `scripts/legacy`,
-имя «Legacy queue collector») лежит в артефакте `collect-workflow.patch`;
-применить можно через веб-интерфейс GitHub (Edit → вставить содержимое) или
-на машине с правом `workflow`:
-
-```bash
-git am collect-workflow.patch && git push origin main
-```
+- устанавливает пакет `.[youtube]` и запускает `kb-agent process run`;
+- секреты из GitHub Secrets передаются через `$GITHUB_ENV`;
+- после прогона сохраняются артефакты `vault` и `state.db`;
+- при ошибке конвейера задача завершается с ненулевым exit-кодом.
 
 Актуальные команды приложения: `kb-agent process run`,
 `kb-agent sources list|add|remove|enable|disable`.
