@@ -469,10 +469,40 @@ class StateManager:
         )
         conn.commit()
 
-    def mark_failed(self, queue_id: int, error: str, next_retry_at: Optional[str] = None) -> None:
+    def mark_failed(
+        self,
+        queue_id: int,
+        error: str,
+        next_retry_at: Optional[str] = None,
+        *,
+        backoff: bool = True,
+    ) -> None:
+        """Помечает элемент очереди как ``failed`` с планом повторного запуска.
+
+        Если ``next_retry_at`` не задан и ``backoff=True``, вычисляется время
+        следующей попытки с экспоненциальной задержкой на основе текущего
+        ``attempts``: ``min(2^attempts минут, 24 часа)``. Это позволяет
+        ``claim_next`` автоматически подхватить элемент после истечения задержки
+        (P1-06: failed-элементы не застревают навсегда).
+        """
         conn = self.connect()
+        if next_retry_at is None and backoff:
+            row = conn.execute(
+                "SELECT attempts FROM raw_queue WHERE id = ?", (queue_id,)
+            ).fetchone()
+            current_attempts = int(row["attempts"] or 0) if row else 0
+            # Экспоненциальный backoff: 1, 2, 4, 8, ... минут, максимум 24 часа.
+            delay_minutes = min(2 ** current_attempts, 60 * 24)
+            next_retry_at = (
+                datetime.now(timezone.utc) + timedelta(minutes=delay_minutes)
+            ).isoformat()
         conn.execute(
-            "UPDATE raw_queue SET state = 'failed', last_error = ?, next_retry_at = ?, lease_expires_at = NULL WHERE id = ?",
+            """
+            UPDATE raw_queue
+            SET state = 'failed', last_error = ?, next_retry_at = ?,
+                lease_expires_at = NULL, attempts = attempts + 1
+            WHERE id = ?
+            """,
             (error, next_retry_at, queue_id),
         )
         conn.commit()

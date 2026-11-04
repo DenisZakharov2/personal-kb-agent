@@ -176,11 +176,7 @@ class Pipeline:
                 )
 
                 if not summary.content.strip():
-                    self.state.mark_failed(
-                        queue_id,
-                        "пустой ответ от LLM",
-                        next_retry_at=None,
-                    )
+                    self.state.mark_failed(queue_id, "пустой ответ от LLM")
                     failed += 1
                     continue
 
