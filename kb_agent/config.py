@@ -19,6 +19,8 @@ from typing import Optional, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from kb_agent.utils.logger import configure_file_logging
+
 # Корень проекта (для установки из исходников). При установке через wheel
 # PROJECT_ROOT указывает в site-packages, поэтому пользовательские данные
 # должны браться из KB_DATA_DIR / data_dir, а не отсюда.
@@ -212,6 +214,8 @@ def load_config(env_file: Optional[str] = None) -> AppConfig:
             kwargs[field_name] = env_vars[env_name]
 
     config = AppConfig(**kwargs)
+    # Файловый журнал (rotating) по пути config.log_path, если задан.
+    configure_file_logging(config.log_path)
     return config
 
 

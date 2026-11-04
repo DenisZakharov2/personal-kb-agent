@@ -55,10 +55,11 @@ class LLMClient:
             logger.warning("API ключ LLM не задан (KB_OPENAI_API_KEY)")
 
     def _headers(self) -> dict[str, str]:
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-        }
+        headers = {"Content-Type": "application/json"}
+        # Локальные провайдеры (Ollama, local, custom) не требуют API-ключа:
+        # Authorization не посылаем, чтобы не отправлять «Bearer None».
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
         # OpenRouter рекомендует передавать источник запроса
         if self.provider == "openrouter":
             headers["HTTP-Referer"] = "https://github.com/DenisZakharov2/personal-kb-agent"
