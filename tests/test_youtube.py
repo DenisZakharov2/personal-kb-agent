@@ -124,6 +124,32 @@ class TestYouTubeDedup:
 class TestYouTubeAutoSubs:
     """P2-06: fallback на автоматические субтитры и очистка TemporaryDirectory."""
 
+    @patch("kb_agent.sources.youtube._download_subs")
+    def test_fetch_transcript_manual_success_no_auto(self, mock_download):
+        """Успешные ручные субтитры — автоматические не запрашиваются (1 вызов)."""
+        mock_download.return_value = "ручная транскрипция"
+
+        result = _fetch_transcript(
+            video_id="vid1",
+            video_url="https://youtube.com/watch?v=vid1",
+            langs=["ru"],
+        )
+        assert result == "ручная транскрипция"
+        assert mock_download.call_count == 1
+
+    @patch("kb_agent.sources.youtube._download_subs")
+    def test_fetch_transcript_auto_fallback_when_manual_none(self, mock_download):
+        """Ручные субтитры absent — используется fallback на автоматические."""
+        mock_download.side_effect = [None, "автоматическая транскрипция"]
+
+        result = _fetch_transcript(
+            video_id="vid1",
+            video_url="https://youtube.com/watch?v=vid1",
+            langs=["ru"],
+        )
+        assert result == "автоматическая транскрипция"
+        assert mock_download.call_count == 2
+
     @patch("kb_agent.sources.youtube.subprocess.run")
     def test_fetch_transcript_tries_auto_subs_when_manual_fails(self, mock_run):
         """При неудаче ручных субтитров делается попытка автоматических."""
