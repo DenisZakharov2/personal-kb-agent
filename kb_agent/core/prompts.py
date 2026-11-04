@@ -35,11 +35,21 @@ def agent_prompt_path(config: AppConfig) -> Path:
     return Path(config.prompts_dir) / "agent_prompt.md"
 
 
+# Тип задачи для каждого промпта: определяет, для каких генераций он используется.
+PROMPT_TYPES = {
+    DEFAULT_PROMPT_NAME: "search",      # ответы на вопросы (kb ask / kb_search)
+    SUMMARIZE_PROMPT_NAME: "summarize", # суммаризация сырого материала в заметку
+    ANSWER_PROMPT_NAME: "search",       # ответы на вопросы (альтернативное имя)
+}
+
+
 def ensure_prompt_seeded(config: AppConfig, state: StateManager) -> Optional[dict]:
     """Импортирует базовые версии промптов в prompt_history (однократно).
 
     Просеиваются ``agent_prompt``, ``summarize_prompt`` и ``answer_prompt`` из
     одного исходного файла, чтобы у каждой области был свой активный промпт.
+    Каждому промпту присваивается ``prompt_type`` (search/summarize/insights),
+    чтобы активную версию можно было выбирать по задаче.
     Возвращает последнюю созданную запись или None, если активные версии уже есть.
     """
     # Базовое содержимое берём из упакованного ресурса, с fallback на каталог
@@ -49,10 +59,17 @@ def ensure_prompt_seeded(config: AppConfig, state: StateManager) -> Optional[dic
     base_path = get_prompt_path(config, "agent_prompt.md") or agent_prompt_path(config)
     seeded: Optional[dict] = None
     for prompt_name in _ALL_PROMPT_NAMES:
-        result = state.seed_prompt_from_file(prompt_name, base_path)
+        result = state.seed_prompt_from_file(
+            prompt_name, base_path, prompt_type=PROMPT_TYPES.get(prompt_name, "search")
+        )
         if result:
             seeded = result
-            logger.info("Промпт %s: активна версия %s", prompt_name, result.get("version"))
+            logger.info(
+                "Промпт %s (тип %s): активна версия %s",
+                prompt_name,
+                PROMPT_TYPES.get(prompt_name, "search"),
+                result.get("version"),
+            )
     return seeded
 
 

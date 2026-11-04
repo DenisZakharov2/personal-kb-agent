@@ -304,6 +304,51 @@ _SCHEMA = [
         ALTER TABLE sources ADD COLUMN is_private INTEGER NOT NULL DEFAULT 0;
         """,
     ),
+    (
+        19,
+        """
+        CREATE TABLE IF NOT EXISTS note_raw_content (
+            note_id TEXT PRIMARY KEY,
+            raw_content TEXT NOT NULL,
+            source_id TEXT,
+            external_id TEXT,
+            canonical_url TEXT,
+            raw_hash TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        """,
+    ),
+    (
+        20,
+        """
+        ALTER TABLE notes ADD COLUMN is_archived INTEGER NOT NULL DEFAULT 0;
+        """,
+    ),
+    (
+        21,
+        """
+        ALTER TABLE prompt_history ADD COLUMN prompt_type TEXT NOT NULL DEFAULT 'search';
+        """,
+    ),
+    (
+        22,
+        """
+        CREATE TABLE IF NOT EXISTS generation_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            note_id TEXT,
+            operation TEXT NOT NULL CHECK (operation IN ('summarize','answer','insights')),
+            model TEXT NOT NULL,
+            prompt_name TEXT,
+            prompt_version INTEGER,
+            prompt_tokens INTEGER NOT NULL DEFAULT 0,
+            completion_tokens INTEGER NOT NULL DEFAULT 0,
+            latency_ms REAL NOT NULL DEFAULT 0,
+            cost_usd REAL NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        """,
+    ),
 ]
 
 SCHEMA_VERSION = max(v for v, _ in _SCHEMA)
@@ -517,6 +562,7 @@ class StateManager:
         content_hash: Optional[str] = None,
         revision: int = 1,
         is_private: int = 0,
+        is_archived: int = 0,
         conn: Optional[sqlite3.Connection] = None,
     ) -> None:
         """Индексирует заметку в обе таблицы (notes + notes_fts) в одной транзакции.
@@ -533,8 +579,8 @@ class StateManager:
             c.execute(
                 """
                 INSERT INTO notes (note_id, title, tags, topic, source_id, external_id, canonical_url,
-                                   file_path, content_hash, revision, is_private, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+                                   file_path, content_hash, revision, is_private, is_archived, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
                 ON CONFLICT(note_id) DO UPDATE SET
                     title = excluded.title,
                     tags = excluded.tags,
@@ -546,6 +592,7 @@ class StateManager:
                     content_hash = excluded.content_hash,
                     revision = notes.revision + 1,
                     is_private = excluded.is_private,
+                    is_archived = excluded.is_archived,
                     updated_at = datetime('now')
                 """,
                 (
@@ -560,6 +607,7 @@ class StateManager:
                     content_hash,
                     revision,
                     is_private,
+                    is_archived,
                 ),
             )
             c.execute("DELETE FROM notes_fts WHERE note_id = ?", (note_id,))
@@ -582,6 +630,172 @@ class StateManager:
         conn = self.connect()
         conn.execute("DELETE FROM notes_fts WHERE note_id = ?", (note_id,))
         conn.commit()
+
+    def save_raw_content(
+        self,
+        note_id: str,
+        raw_content: str,
+        *,
+        source_id: Optional[str] = None,
+        external_id: Optional[str] = None,
+        canonical_url: Optional[str] = None,
+        raw_hash: Optional[str] = None,
+        conn: Optional[sqlite3.Connection] = None,
+    ) -> None:
+        """Сохраняет/обновляет исходное содержимое заметки, привязанное к note_id.
+
+        Хранится отдельно от суммаризации, чтобы заметку можно было
+        пересобрать другой моделью или промптом без повторного сбора источника.
+        """
+        c = conn or self.connect()
+        own = conn is None
+        try:
+            if own:
+                c.execute("BEGIN IMMEDIATE")
+            c.execute(
+                """
+                INSERT INTO note_raw_content (note_id, raw_content, source_id, external_id,
+                                              canonical_url, raw_hash, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+                ON CONFLICT(note_id) DO UPDATE SET
+                    raw_content = excluded.raw_content,
+                    source_id = excluded.source_id,
+                    external_id = excluded.external_id,
+                    canonical_url = excluded.canonical_url,
+                    raw_hash = excluded.raw_hash,
+                    updated_at = datetime('now')
+                """,
+                (note_id, raw_content, source_id, external_id, canonical_url, raw_hash),
+            )
+            if own:
+                c.commit()
+        except Exception:
+            if own:
+                c.rollback()
+            raise
+
+    def get_raw_content(self, note_id: str) -> Optional[dict]:
+        """Возвращает исходное содержимое заметки по note_id или None."""
+        conn = self.connect()
+        row = conn.execute(
+            "SELECT * FROM note_raw_content WHERE note_id = ?", (note_id,)
+        ).fetchone()
+        return dict(row) if row else None
+
+    def get_note_by_external(self, source_id: str, external_id: str) -> Optional[dict]:
+        """Находит существующую заметку по паре (source_id, external_id).
+
+        Используется для идемпотентного обновления: при повторном сборе
+        того же источника обновляем уже имеющуюся заметку (revision + 1),
+        а не создаём новую.
+        """
+        conn = self.connect()
+        row = conn.execute(
+            """
+            SELECT * FROM notes
+            WHERE source_id = ? AND external_id = ?
+            ORDER BY revision DESC
+            LIMIT 1
+            """,
+            (source_id, external_id),
+        ).fetchone()
+        return dict(row) if row else None
+
+    def list_queue(
+        self, state: Optional[str] = None, limit: int = 100
+    ) -> list[dict]:
+        """Возвращает элементы raw_queue, опционально отфильтрованные по состоянию.
+
+        Например, state='skipped' — просмотр пропущенных материалов, которые
+        можно вернуть в ``new`` через ``kb-agent retry <id>``.
+        """
+        conn = self.connect()
+        if state:
+            rows = conn.execute(
+                """
+                SELECT * FROM raw_queue
+                WHERE state = ?
+                ORDER BY received_at DESC
+                LIMIT ?
+                """,
+                (state, limit),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """
+                SELECT * FROM raw_queue
+                ORDER BY received_at DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def set_note_archived(self, note_id: str, archived: bool = True) -> bool:
+        """Устанавливает/снимает флаг is_archived у заметки.
+
+        Архивные заметки исключаются из обычного поиска (state.search с
+        include_archived=False) и из каталога, но остаются в notes и FTS
+        для возможности восстановления.
+        """
+        conn = self.connect()
+        cur = conn.execute(
+            "UPDATE notes SET is_archived = ?, updated_at = datetime('now') WHERE note_id = ?",
+            (1 if archived else 0, note_id),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+
+    def save_generation_log(
+        self,
+        note_id: Optional[str],
+        operation: str,
+        model: str,
+        *,
+        prompt_name: Optional[str] = None,
+        prompt_version: Optional[int] = None,
+        prompt_tokens: int = 0,
+        completion_tokens: int = 0,
+        latency_ms: float = 0.0,
+        cost_usd: float = 0.0,
+        conn: Optional[sqlite3.Connection] = None,
+    ) -> int:
+        """Записывает метаданные одной генерации (модель, промпт, токены,
+        задержка, стоимость) в generation_log."""
+        allowed = ("summarize", "answer", "insights")
+        if operation not in allowed:
+            raise ValueError(f"Недопустимая операция: {operation}")
+        c = conn or self.connect()
+        own = conn is None
+        try:
+            if own:
+                c.execute("BEGIN IMMEDIATE")
+            cur = c.execute(
+                """
+                INSERT INTO generation_log
+                    (note_id, operation, model, prompt_name, prompt_version,
+                     prompt_tokens, completion_tokens, latency_ms, cost_usd, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                """,
+                (
+                    note_id,
+                    operation,
+                    model,
+                    prompt_name,
+                    prompt_version,
+                    int(prompt_tokens or 0),
+                    int(completion_tokens or 0),
+                    float(latency_ms or 0.0),
+                    float(cost_usd or 0.0),
+                ),
+            )
+            if own:
+                c.commit()
+            return cur.lastrowid
+        except Exception:
+            if own:
+                c.rollback()
+            raise
 
     def rebuild_fts(self) -> int:
         """Перестраивает notes_fts целиком из канонической таблицы notes.
@@ -607,7 +821,18 @@ class StateManager:
             conn.rollback()
             raise
 
-    def search(self, query: str, limit: int = 10) -> list[dict]:
+    def search(
+        self,
+        query: str,
+        limit: int = 10,
+        *,
+        source_id: Optional[str] = None,
+        topic: Optional[str] = None,
+        tags: Optional[list[str]] = None,
+        date_from: Optional[str] = None,
+        date_to: Optional[str] = None,
+        include_archived: bool = False,
+    ) -> list[dict]:
         conn = self.connect()
         # Ограничиваем размер выдачи: защита от выкачивания всей базы в контекст LLM.
         try:
@@ -622,19 +847,51 @@ class StateManager:
         if not words:
             return []
         fts_query = " OR ".join(f'"{word}"' for word in words)
+
+        # Дополнительные фильтры накладываются на каноническую таблицу notes
+        # (проекция rebuildable, метаданные provenance хранятся там).
+        conditions: list[str] = []
+        params: list[object] = [fts_query]
+        if source_id is not None:
+            conditions.append("n.source_id = ?")
+            params.append(source_id)
+        if topic is not None:
+            conditions.append("n.topic = ?")
+            params.append(topic)
+        if tags:
+            for tag in tags:
+                if not tag.strip():
+                    continue
+                # tags хранятся как "тэг1,тэг2"; ищем целевой тег с запятыми по краям,
+                # добавляя фиктивные запятые вокруг значения столбца.
+                conditions.append("',' || COALESCE(n.tags, '') || ',' LIKE ?")
+                params.append(f"%,{tag.strip()},%")
+        if date_from is not None:
+            conditions.append("date(n.created_at) >= date(?)")
+            params.append(date_from)
+        if date_to is not None:
+            conditions.append("date(n.created_at) <= date(?)")
+            params.append(date_to)
+        if not include_archived:
+            conditions.append("(n.is_archived = 0 OR n.is_archived IS NULL)")
+        where_clause = (
+            "WHERE notes_fts MATCH ?"
+            if not conditions
+            else "WHERE notes_fts MATCH ? AND " + " AND ".join(conditions)
+        )
         try:
             rows = conn.execute(
-                """
+                f"""
                 SELECT f.note_id, f.title, f.tags, f.topic, f.content, f.rank,
                        n.canonical_url, n.source_id, n.external_id, n.file_path,
-                       n.content_hash, n.revision, n.is_private
+                       n.content_hash, n.revision, n.is_private, n.is_archived
                 FROM notes_fts f
                 LEFT JOIN notes n ON n.note_id = f.note_id
-                WHERE notes_fts MATCH ?
+                {where_clause}
                 ORDER BY rank
                 LIMIT ?
                 """,
-                (fts_query, limit),
+                (*params, limit),
             ).fetchall()
         except sqlite3.OperationalError as exc:
             # Некорректный с точки зрения FTS5 запрос не должен ронять CLI/MCP.
@@ -653,7 +910,7 @@ class StateManager:
             """
             SELECT n.note_id, n.title, n.tags, n.topic, n.source_id, n.external_id,
                    n.canonical_url, n.file_path, n.content_hash, n.revision,
-                   n.created_at, n.updated_at, n.is_private, f.content
+                   n.created_at, n.updated_at, n.is_private, n.is_archived, f.content
             FROM notes n
             LEFT JOIN notes_fts f ON f.note_id = n.note_id
             WHERE n.note_id = ?
@@ -691,6 +948,8 @@ class StateManager:
         prompt_name: str,
         version: int,
         content: str,
+        *,
+        prompt_type: str = "search",
         is_active: bool = False,
         approved_by: Optional[str] = None,
         reverted_from: Optional[int] = None,
@@ -700,34 +959,57 @@ class StateManager:
         own = conn is None
         cur = c.execute(
             """
-            INSERT INTO prompt_history (prompt_name, version, content, is_active, approved_by, reverted_from)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO prompt_history (prompt_name, version, content, prompt_type, is_active,
+                                        approved_by, reverted_from)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (prompt_name, version, content, int(is_active), approved_by, reverted_from),
+            (
+                prompt_name,
+                version,
+                content,
+                prompt_type,
+                int(is_active),
+                approved_by,
+                reverted_from,
+            ),
         )
         if own:
             c.commit()
         return cur.lastrowid
 
-    def get_active_prompt(self, prompt_name: str) -> Optional[dict]:
+    def get_active_prompt(
+        self, prompt_name: str, prompt_type: Optional[str] = None
+    ) -> Optional[dict]:
         conn = self.connect()
-        row = conn.execute(
-            """
-            SELECT * FROM prompt_history
-            WHERE prompt_name = ? AND is_active = 1
-            ORDER BY version DESC LIMIT 1
-            """,
-            (prompt_name,),
-        ).fetchone()
+        if prompt_type is not None:
+            row = conn.execute(
+                """
+                SELECT * FROM prompt_history
+                WHERE prompt_name = ? AND is_active = 1 AND prompt_type = ?
+                ORDER BY version DESC LIMIT 1
+                """,
+                (prompt_name, prompt_type),
+            ).fetchone()
+        else:
+            row = conn.execute(
+                """
+                SELECT * FROM prompt_history
+                WHERE prompt_name = ? AND is_active = 1
+                ORDER BY version DESC LIMIT 1
+                """,
+                (prompt_name,),
+            ).fetchone()
         return dict(row) if row else None
 
-    def seed_prompt_from_file(self, prompt_name: str, prompt_path: Path) -> Optional[dict]:
+    def seed_prompt_from_file(
+        self, prompt_name: str, prompt_path: Path, prompt_type: str = "search"
+    ) -> Optional[dict]:
         """Заводит версию 1 промпта из файла, если активной версии ещё нет.
 
         Нужен, чтобы `prompt_history` не оставалась пустой: без этого
         `self-improve rollback` и MCP `kb_revert_prompt` нечего откатывать.
         """
-        if self.get_active_prompt(prompt_name):
+        if self.get_active_prompt(prompt_name, prompt_type=prompt_type):
             return None
         prompt_path = Path(prompt_path)
         if not prompt_path.exists():
@@ -744,11 +1026,12 @@ class StateManager:
             prompt_name=prompt_name,
             version=1,
             content=content,
+            prompt_type=prompt_type,
             is_active=True,
             approved_by="system",
         )
         logger.info("Промпт %s импортирован в prompt_history как версия 1", prompt_name)
-        return self.get_active_prompt(prompt_name)
+        return self.get_active_prompt(prompt_name, prompt_type=prompt_type)
 
     def is_processed(self, key: str) -> bool:
         conn = self.connect()
@@ -975,7 +1258,17 @@ class StateManager:
     def stats(self) -> dict:
         conn = self.connect()
         result: dict = {}
-        for table in ("raw_queue", "notes", "feedback", "prompt_history", "processed", "sources", "pending_changes"):
+        for table in (
+            "raw_queue",
+            "notes",
+            "note_raw_content",
+            "feedback",
+            "prompt_history",
+            "generation_log",
+            "processed",
+            "sources",
+            "pending_changes",
+        ):
             row = conn.execute(f"SELECT COUNT(*) AS c FROM {table}").fetchone()
             result[table] = row["c"] if row else 0
         row = conn.execute("SELECT state, COUNT(*) AS c FROM raw_queue GROUP BY state").fetchall()

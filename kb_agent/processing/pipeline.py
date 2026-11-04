@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -15,7 +16,7 @@ from typing import Optional
 import yaml
 
 from kb_agent.config import AppConfig
-from kb_agent.core.prompts import ensure_prompt_seeded
+from kb_agent.core.prompts import SUMMARIZE_PROMPT_NAME, ensure_prompt_seeded
 from kb_agent.core.relevance import RelevanceGate
 from kb_agent.processing.llm_client import LLMClient
 from kb_agent.sources.manager import run_collection
@@ -119,6 +120,7 @@ class Pipeline:
         Освобождает зависшие processing элементы после истечения lease.
         """
         created = 0
+        updated = 0
         skipped = 0
         failed = 0
         processed_total = 0
@@ -149,11 +151,20 @@ class Pipeline:
                     )
                     continue
 
-                # Генерируем note_id (без пробелов: пригоден для URL и шелла)
-                note_id = self._make_note_id(item["received_at"])
-
                 # Определяем тип источника
                 source_type = item["source_id"].split("_")[0]  # tg или yt
+
+                # Идемпотентно: при повторном сборе того же источника
+                # обновляем существующую заметку (revision + 1), а не создаём новую.
+                existing = self.state.get_note_by_external(item["source_id"], item["external_id"])
+                if existing:
+                    note_id = existing["note_id"]
+                    revision = int(existing["revision"] or 1) + 1
+                    is_update = True
+                else:
+                    note_id = self._make_note_id(item["received_at"])
+                    revision = 1
+                    is_update = False
 
                 # Структурированная суммаризация через LLM (P2-10: JSON-схема,
                 # валидация темы против профиля, повтор при невалидной схеме)
@@ -177,8 +188,9 @@ class Pipeline:
                 topic = summary.topic
                 content = summary.content
 
-                # Пишем заметку в vault (тематические папки)
-                self.vault.write_note(
+                # Запись в vault: существующий файл с таким note_id
+                # перезаписывается на месте (без дублей файлов).
+                file_path = self.vault.write_note(
                     note_id=note_id,
                     source_id=item["source_id"],
                     source_type=source_type,
@@ -192,7 +204,25 @@ class Pipeline:
                     content=content,
                 )
 
-                # Индексируем в FTS5 (с удалением старой записи при дубле)
+                # Метаданные генерации (модель, версия промпта, токены, задержка, стоимость).
+                llm_response = self.llm.last_response
+                active_prompt = self.state.get_active_prompt(
+                    SUMMARIZE_PROMPT_NAME, prompt_type="summarize"
+                )
+                self.state.save_generation_log(
+                    note_id=note_id,
+                    operation="summarize",
+                    model=self.llm.model,
+                    prompt_name=SUMMARIZE_PROMPT_NAME,
+                    prompt_version=active_prompt["version"] if active_prompt else None,
+                    prompt_tokens=llm_response.prompt_tokens if llm_response else 0,
+                    completion_tokens=llm_response.completion_tokens if llm_response else 0,
+                    latency_ms=llm_response.latency_ms if llm_response else 0.0,
+                    cost_usd=0.0,
+                )
+
+                # Индексируем в FTS5 (при дубле note_id обновляется запись, revision + 1).
+                content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
                 self.state.remove_from_index(note_id)
                 self.state.index_note(
                     note_id=note_id,
@@ -200,13 +230,33 @@ class Pipeline:
                     tags=",".join(tags),
                     topic=topic,
                     content=content,
+                    source_id=item["source_id"],
+                    external_id=item["external_id"],
+                    canonical_url=item["canonical_url"] or "",
+                    file_path=str(file_path),
+                    content_hash=content_hash,
+                    revision=revision,
+                )
+
+                # Исходное содержимое хранится отдельно от суммаризации,
+                # чтобы заметку можно было пересобрать другой моделью/промптом.
+                self.state.save_raw_content(
+                    note_id=note_id,
+                    raw_content=item["raw_text"] or "",
+                    source_id=item["source_id"],
+                    external_id=item["external_id"],
+                    canonical_url=item["canonical_url"] or "",
+                    raw_hash=item["raw_hash"],
                 )
 
                 # Связываем с уже накопленными заметками по общим тегам
                 self._link_related_notes(note_id, tags)
 
                 self.state.mark_processed(queue_id)
-                created += 1
+                if is_update:
+                    updated += 1
+                else:
+                    created += 1
 
             except Exception as exc:  # noqa: BLE001
                 logger.exception("Ошибка при обработке элемента %s", queue_id)
@@ -216,6 +266,7 @@ class Pipeline:
         return {
             "processed": processed_total,
             "created": created,
+            "updated": updated,
             "skipped": skipped,
             "relevance_skipped": relevance_skipped,
             "failed": failed,

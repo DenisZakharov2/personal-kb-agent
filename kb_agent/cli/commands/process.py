@@ -61,6 +61,7 @@ def process_run(
             proc = result["processing"]
             typer.echo(f"Обработано в очереди: {proc['processed']}")
             typer.echo(f"Создано заметок: {proc['created']}")
+            typer.echo(f"Обновлено заметок: {proc.get('updated', 0)}")
             typer.echo(f"Пропущено (relevance): {proc.get('relevance_skipped', 0)}")
             typer.echo(f"Пропущено (другое): {proc['skipped']}")
             typer.echo(f"Ошибок: {proc['failed']}")
@@ -421,6 +422,82 @@ def process_retry(
         else:
             typer.echo(f"✗ Ошибка retry: {exc}")
         raise typer.Exit(code=1)
+
+
+@app.command("skipped")
+def process_skipped(
+    state: str = typer.Option(
+        "skipped",
+        "--state",
+        "-s",
+        help="Состояние очереди для просмотра: skipped / failed / new / processing",
+    ),
+    limit: int = typer.Option(
+        50,
+        "--limit",
+        "-l",
+        help="Максимум элементов в выводе",
+    ),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        "-j",
+        help="Вывести результат в формате JSON",
+    ),
+) -> None:
+    """Просмотр пропущенных/ошибочных элементов очереди raw_queue.
+
+    Элемент любого состояния можно вернуть в ``new`` через ``kb-agent retry <id>``,
+    после чего конвейер подхватит его при следующем запуске.
+    """
+    config = load_config()
+    state_mgr = StateManager(config.db_path)
+    try:
+        state_mgr.init_db()
+        conn = state_mgr.connect()
+        allowed = ("new", "processing", "processed", "skipped", "failed")
+        if state not in allowed:
+            raise typer.Exit(code=1)
+        rows = conn.execute(
+            """
+            SELECT id, source_id, external_id, title, state, attempts, last_error,
+                   skipped_reason, next_retry_at, received_at
+            FROM raw_queue
+            WHERE state = ?
+            ORDER BY received_at DESC
+            LIMIT ?
+            """,
+            (state, limit),
+        ).fetchall()
+        items = [dict(row) for row in rows]
+        state_mgr.close()
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Ошибка skipped")
+        try:
+            state_mgr.close()
+        except Exception:  # noqa: BLE001
+            pass
+        if json_output:
+            _output_json({"error": str(exc), "items": []})
+        else:
+            typer.echo(f"✗ Ошибка просмотра очереди: {exc}")
+        raise typer.Exit(code=1)
+
+    result = {"state": state, "count": len(items), "items": items}
+    if json_output:
+        _output_json(result)
+    else:
+        typer.echo(f"Элементов в состоянии '{state}': {len(items)}")
+        for row in items:
+            typer.echo(
+                f"  id={row['id']} source={row['source_id']} external={row['external_id']} "
+                f"attempts={row['attempts']} received={row['received_at']}"
+            )
+            if row["last_error"]:
+                typer.echo(f"    ошибка: {row['last_error']}")
+            if row["skipped_reason"]:
+                typer.echo(f"    причина пропуска: {row['skipped_reason']}")
+        typer.echo("Вернуть элемент в новую обработку: kb-agent retry <id>")
 
 
 @app.command("backup")

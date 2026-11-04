@@ -1,0 +1,30 @@
+{
+  "name": "kb-agent eval набор (раздел 9 аудита)",
+  "description": "Отдельный eval-набор для проверки промптов перед активацией: вопрос, ожидаемые note_id/URL, критерии полноты, запрещённые выдумки.",
+  "questions": [
+    {
+      "id": "eval-001",
+      "question": "Какие инструменты автоматизации упоминаются в заметках?",
+      "expected_note_ids": ["note-auto-1"],
+      "expected_urls": ["https://t.me/s/channel/42"],
+      "criteria": "ответ содержит названия инструментов и ссылается на источники",
+      "forbidden_hallucinations": ["неизвестный инструмент X", "вымышленный сервис"]
+    },
+    {
+      "id": "eval-002",
+      "question": "Что говорится про нейросети и глубокое обучение?",
+      "expected_note_ids": ["note-ai-1"],
+      "criteria": "ответ основан только на найденных заметках, без придуманных фактов",
+      "forbidden_hallucinations": ["секретный проект", "закрытый бета-тест"]
+    },
+    {
+      "id": "eval-003",
+      "question": "Кто автор исследования про квантовые вычисления?",
+      "expected_note_ids": [],
+      "criteria": "если данных нет — честно сообщить 'В базе недостаточно данных'",
+      "forbidden_hallucinations": ["Иван Иванов", "доктор наук"]
+    }
+  ],
+  "threshold": 0.5,
+  "metrics": ["hit_rate", "citation_correctness", "insufficient_data_accuracy"]
+}

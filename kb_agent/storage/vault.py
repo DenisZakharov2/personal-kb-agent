@@ -2,12 +2,15 @@
 
 Безопасная запись заметок .md с YAML frontmatter в тематические папки
 (по темам из профиля пользователя, а не по источнику).
+Поддерживает обновление существующей заметки по note_id и архивацию
+(перемещение в папку Архив).
 """
 
 from __future__ import annotations
 
 import hashlib
 import os
+import uuid
 from pathlib import Path
 from typing import Optional
 
@@ -53,6 +56,22 @@ class VaultManager:
         folder.mkdir(parents=True, exist_ok=True)
         return folder
 
+    def find_note_file(self, note_id: str) -> Optional[Path]:
+        """Находит файл заметки по note_id из frontmatter.
+
+        Сначала ищет точное совпадение note_id, чтобы при обновлении
+        существующей заметки перезаписать тот же файл (без дублей).
+        """
+        for path in self.list_notes():
+            try:
+                parsed = self.parse_note(path)
+            except Exception:  # noqa: BLE001
+                logger.warning("Не удалось разобрать frontmatter %s, пропускаю", path)
+                continue
+            if parsed.get("note_id") == note_id:
+                return path
+        return None
+
     def write_note(
         self,
         *,
@@ -68,22 +87,35 @@ class VaultManager:
         topic: str,
         content: str,
         previous_note_id: Optional[str] = None,
+        archived: bool = False,
     ) -> Path:
-        """Создаёт .md файл с YAML frontmatter и возвращает путь к нему.
+        """Создаёт или обновляет .md файл с YAML frontmatter.
 
-        Запись атомарная: через временный файл с последующей заменой.
+        Если файл с таким ``note_id`` уже существует (по frontmatter),
+        запись выполняется поверх него — идемпотентное обновление при
+        повторном сборе того же источника не создаёт дублей файлов.
+        В противном случае создаётся новый файл в тематической папке
+        (или в папке Архив, если ``archived=True``).
 
         ``previous_note_id`` зарезервирован для будущего версионирования
-        заметок (актуализация при изменении источника). В текущей версии
-        всегда ``None`` — реальная актуализация ещё не реализована.
+        заметок (актуализация при изменении источника).
         """
-        folder = self._topic_folder(topic)
-        file_name = f"{received_at[:10]}_{slugify(title)}.md"
-        file_path = folder / file_name
-
-        if file_path.exists():
-            file_name = f"{received_at[:10]}_{slugify(title)}_{note_id[:8]}.md"
+        existing = self.find_note_file(note_id)
+        if existing is not None:
+            file_path = existing
+            # Тема берём из существующего файла, если не передана явно через topic
+            folder = file_path.parent
+        else:
+            if archived:
+                folder = self.vault_path / "Архив"
+                folder.mkdir(parents=True, exist_ok=True)
+            else:
+                folder = self._topic_folder(topic)
+            file_name = f"{received_at[:10]}_{slugify(title)}.md"
             file_path = folder / file_name
+            if file_path.exists():
+                file_name = f"{received_at[:10]}_{slugify(title)}_{note_id[:8]}.md"
+                file_path = folder / file_name
 
         frontmatter = {
             "source": source_type,
@@ -96,6 +128,7 @@ class VaultManager:
             "note_id": note_id,
             "previous_note_id": previous_note_id,
             "frontmatter_schema_version": 1,
+            "archived": archived,
             "title": title,
             "tags": tags.split(",") if tags else [],
             "topic": topic,
@@ -122,6 +155,76 @@ class VaultManager:
 
         logger.info("Запись заметки: %s", file_path)
         return file_path
+
+    def archive_note(self, note_id: str) -> Optional[Path]:
+        """Перемещает файл заметки в папку ``Архив`` и возвращает новый путь.
+
+        Если файл не найден — возвращает None. Повторный вызов для уже
+        архивной заметки безопасен (идемпотентен): если файл уже в архиве,
+        возвращается его текущий путь без перемещения.
+        """
+        path = self.find_note_file(note_id)
+        if path is None:
+            return None
+        if path.parent.name == "Архив":
+            logger.info("Заметка уже в архиве: %s", path)
+            return path
+        archive_folder = self.vault_path / "Архив"
+        archive_folder.mkdir(parents=True, exist_ok=True)
+        target = archive_folder / path.name
+        if target.exists():
+            target = (
+                archive_folder / f"{path.stem}_{uuid.uuid4().hex[:8]}{path.suffix}"
+            )
+        os.replace(path, target)
+        # Помечаем в frontmatter, чтобы заметка не потеряла статус архивной
+        self._rewrite_frontmatter(target, archived=True)
+        logger.info("Заметка archived: %s -> %s", path, target)
+        return target
+
+    def restore_note(self, note_id: str, topic: Optional[str] = None) -> Optional[Path]:
+        """Возвращает файл заметки из архива в тематическую папку.
+
+        ``topic`` — целевая тема (по умолчанию берётся из frontmatter).
+        Возвращает новый путь или None, если файл не найден.
+        """
+        path = self.find_note_file(note_id)
+        if path is None:
+            # Ищем в корне и в архиве (list_notes обходит все подпапки vault)
+            return None
+        if path.parent.name == "Архив":
+            topic = topic or (self.parse_note(path).get("topic") or "Общее")
+            folder = self._topic_folder(topic)
+            target = folder / path.name
+            if target.exists():
+                target = (
+                    folder / f"{path.stem}_{uuid.uuid4().hex[:8]}{path.suffix}"
+                )
+            os.replace(path, target)
+            self._rewrite_frontmatter(target, archived=False)
+            logger.info("Заметка restored: %s -> %s", path, target)
+            return target
+        return path
+
+    @staticmethod
+    def _rewrite_frontmatter(path: Path, archived: bool) -> None:
+        """Перезаписывает только поле ``archived`` во frontmatter существующего файла."""
+        text = path.read_text(encoding="utf-8")
+        if not text.startswith("---\n"):
+            return
+        _, _, rest = text.partition("---\n")
+        frontmatter_text, _, body = rest.partition("---\n")
+        try:
+            loaded = yaml.safe_load(frontmatter_text) or {}
+        except yaml.YAMLError:  # noqa: BLE001
+            return
+        if not isinstance(loaded, dict):
+            return
+        loaded["archived"] = archived
+        new_fm = yaml.safe_dump(loaded, allow_unicode=True, sort_keys=False, default_flow_style=False).strip()
+        path.write_text(
+            "---\n" + new_fm + "\n---\n" + body, encoding="utf-8"
+        )
 
     def list_notes(self, topic: Optional[str] = None) -> list[Path]:
         """Возвращает список всех .md заметок, опционально по теме."""

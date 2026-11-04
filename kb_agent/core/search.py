@@ -9,7 +9,11 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from kb_agent.config import AppConfig
-from kb_agent.core.prompts import get_active_system_prompt
+from kb_agent.core.prompts import (
+    ANSWER_PROMPT_NAME,
+    DEFAULT_PROMPT_NAME,
+    get_active_system_prompt,
+)
 from kb_agent.processing.llm_client import LLMClient
 from kb_agent.storage.state import StateManager, _WORD_RE
 from kb_agent.utils.logger import setup_logger
@@ -19,6 +23,11 @@ logger = setup_logger("kb_agent.core.search")
 # Окно релевантного фрагмента (в символах) вокруг совпадения, используемое
 # в контексте LLM вместо первых 1500 символов заметки (P2-11).
 SNIPPET_WINDOW = 240
+
+# Размер чанка (в символах) при разбиении длинного контента и перекрытие
+# между соседними чанками, чтобы цитата не обрывалась mid-sentence.
+CHUNK_TARGET_SIZE = 1500
+CHUNK_OVERLAP = 200
 
 
 @dataclass
@@ -33,6 +42,8 @@ class SearchResult:
     score: float = 0.0
     # Релевантный фрагмент вокруг совпадения запроса (P2-11).
     snippet: str = ""
+    # Смещение фрагмента в исходном контенте (start, end) для цитирования.
+    snippet_offset: Optional[tuple[int, int]] = None
     # Поля provenience (из таблицы notes): источник, путь, версия и hash.
     canonical_url: Optional[str] = None
     source_id: Optional[str] = None
@@ -45,14 +56,62 @@ class SearchResult:
     sensitivity: str = "public"
 
 
-def _make_snippet(content: str, query_terms: list[str], window: int = SNIPPET_WINDOW) -> str:
-    """Возвращает фрагмент контента вокруг первого совпадения любого термина запроса.
+@dataclass
+class Chunk:
+    """Один фрагмент контента со смещениями для цитирования."""
 
-    Если ни один термин не найден — возвращает начало контента. Окружает
-    фрагмент многоточиями, если он обрезан по краям.
+    text: str
+    start: int
+    end: int
+
+
+def chunk_text(
+    text: str, target_size: int = CHUNK_TARGET_SIZE, overlap: int = CHUNK_OVERLAP
+) -> list[Chunk]:
+    """Разбивает длинный контент на чанки с сохранением смещений (offsets).
+
+    Каждый чанк содержит ``text`` и смещения ``start``/``end`` относительно
+    исходного текста, что позволяет цитировать фрагмент со ссылкой на место
+    в источнике. Перекрытие между чанками не даёт обрывать цитаты
+    посередине предложения.
+    """
+    text = text or ""
+    n = len(text)
+    if n == 0:
+        return []
+    chunks: list[Chunk] = []
+    start = 0
+    while start < n:
+        end = min(n, start + target_size)
+        if end < n:
+            # Постараться оборвать чанк на границе абзаца/предложения.
+            cut = end
+            for sep in ("\n\n", ". ", "! ", "? ", "。", " ", ""):
+                idx = text.rfind(sep, start, end)
+                if idx != -1:
+                    cut = idx + len(sep) if sep else idx
+                    break
+            end = max(cut, start + 1)
+        chunks.append(Chunk(text=text[start:end], start=start, end=end))
+        if end >= n:
+            break
+        start = end - overlap
+        if start <= chunks[-1].start:
+            start = chunks[-1].end
+    return chunks
+
+
+def _make_snippet(
+    content: str, query_terms: list[str], window: int = SNIPPET_WINDOW
+) -> tuple[str, Optional[tuple[int, int]]]:
+    """Возвращает (фрагмент, (start, end)) вокруг первого совпадения запроса.
+
+    Если ни один термин не найден — возвращает начало контента.
+    Окружает фрагмент многоточиями, если он обрезан по краям.
     """
     if not content or not query_terms:
-        return content[:window] if content else ""
+        snippet = content[:window] if content else ""
+        return snippet, (0, len(snippet)) if snippet else None
     lower = content.lower()
     best_pos: Optional[int] = None
     for term in query_terms:
@@ -60,7 +119,8 @@ def _make_snippet(content: str, query_terms: list[str], window: int = SNIPPET_WI
         if pos != -1 and (best_pos is None or pos < best_pos):
             best_pos = pos
     if best_pos is None:
-        return content[:window]
+        snippet = content[:window]
+        return snippet, (0, len(snippet)) if snippet else None
     start = max(0, best_pos - window // 2)
     end = min(len(content), best_pos + window // 2)
     snippet = content[start:end]
@@ -68,7 +128,7 @@ def _make_snippet(content: str, query_terms: list[str], window: int = SNIPPET_WI
         snippet = "…" + snippet
     if end < len(content):
         snippet = snippet + "…"
-    return snippet.strip()
+    return snippet.strip(), (start, end)
 
 
 @dataclass
@@ -90,12 +150,37 @@ class SearchEngine:
         self.state = state
         self.llm = llm
 
-    def search(self, query: str, limit: int = 5) -> SearchResponse:
-        """Ищет заметки по запросу и возвращает релевантные результаты."""
+    def search(
+        self,
+        query: str,
+        limit: int = 5,
+        *,
+        source_id: Optional[str] = None,
+        topic: Optional[str] = None,
+        tags: Optional[list[str]] = None,
+        date_from: Optional[str] = None,
+        date_to: Optional[str] = None,
+        include_archived: bool = False,
+    ) -> SearchResponse:
+        """Ищет заметки по запросу с фильтрами и возвращает релевантные результаты.
+
+        Фильтры: ``source_id``, ``topic``, ``tags`` (список, все должны
+        совпасть), ``date_from``/``date_to`` (по дате создания заметки).
+        Архивные заметки исключаются по умолчанию.
+        """
         logger.info("Поиск: %s", query)
 
-        # FTS5 поиск
-        rows = self.state.search(query, limit=limit)
+        # FTS5 поиск с фильтрами по метаданным (provenance).
+        rows = self.state.search(
+            query,
+            limit=limit,
+            source_id=source_id,
+            topic=topic,
+            tags=tags,
+            date_from=date_from,
+            date_to=date_to,
+            include_archived=include_archived,
+        )
         query_terms = _WORD_RE.findall(query or "")
         results: list[SearchResult] = []
         best_rank: Optional[float] = None
@@ -107,6 +192,7 @@ class SearchEngine:
             # где лучше ранга выше score. Лучший результат в выдаче -> ~1.0.
             score = max(0.0, min(1.0, 1.0 + (rank or 0.0)))
             content = row.get("content", "") or ""
+            snippet, snippet_offset = _make_snippet(content, query_terms)
             results.append(
                 SearchResult(
                     note_id=row["note_id"],
@@ -115,7 +201,8 @@ class SearchEngine:
                     topic=row["topic"] or "",
                     content=content,
                     score=score,
-                    snippet=_make_snippet(content, query_terms),
+                    snippet=snippet,
+                    snippet_offset=snippet_offset,
                     canonical_url=row.get("canonical_url"),
                     source_id=row.get("source_id"),
                     external_id=row.get("external_id"),
@@ -180,6 +267,22 @@ class SearchEngine:
         response.answer = llm_response.text
         response.sources = sources
         response.enough_data = True
+
+        # Метаданные генерации ответа (prompt_type = search).
+        active_prompt = self.state.get_active_prompt(
+            DEFAULT_PROMPT_NAME, prompt_type="search"
+        )
+        self.state.save_generation_log(
+            note_id=None,
+            operation="answer",
+            model=getattr(self.llm, "model", "unknown"),
+            prompt_name=DEFAULT_PROMPT_NAME,
+            prompt_version=active_prompt["version"] if active_prompt else None,
+            prompt_tokens=llm_response.prompt_tokens,
+            completion_tokens=llm_response.completion_tokens,
+            latency_ms=llm_response.latency_ms,
+            cost_usd=0.0,
+        )
         return response
 
 
@@ -199,6 +302,66 @@ def format_search_response(question: str, response: SearchResponse) -> str:
         lines.append("> В базе недостаточно данных для ответа на этот вопрос.")
 
     return "\n".join(lines)
+
+
+@dataclass
+class SearchAnswerValidation:
+    """Результат валидации ответа поиска (structured output для ответа LLM)."""
+
+    passed: bool
+    cited_note_ids: list[str] = field(default_factory=list)
+    unknown_citations: list[str] = field(default_factory=list)
+    forbidden_phrases_found: list[str] = field(default_factory=list)
+    reason: str = ""
+
+
+def _extract_cited_ids(text: str) -> list[str]:
+    """Извлекает упоминания ID заметок вида 'ID: <note_id>' из текста ответа."""
+    import re as _re
+
+    ids: list[str] = []
+    for match in _re.finditer(r"ID:\s*([A-Za-z0-9_\-:.]+)", text or ""):
+        ids.append(match.group(1))
+    return ids
+
+
+def validate_search_answer(
+    answer: str,
+    results: list[SearchResult],
+    forbidden_phrases: Optional[list[str]] = None,
+) -> SearchAnswerValidation:
+    """Валидация структуры ответа поиска (валидация вывода LLM).
+
+    Проверяет:
+    - все упомянутые ID заметок ссылаются на реальные результаты выдачи
+      (нет выдуманных ссылок);
+    - в ответе нет запрещённых фраз/галюцинаций;
+    - если ответ не «недостаточно данных», хоть одна заметка процитирована.
+    """
+    known_ids = {r.note_id for r in results}
+    cited = _extract_cited_ids(answer or "")
+    unknown = [cid for cid in cited if cid not in known_ids]
+    forbidden_phrases = forbidden_phrases or []
+    found_forbidden = [phrase for phrase in forbidden_phrases if phrase in (answer or "")]
+
+    reason_parts: list[str] = []
+    if unknown:
+        reason_parts.append(f"выдуманные ссылки: {unknown}")
+    if found_forbidden:
+        reason_parts.append(f"запрещённые фразы: {found_forbidden}")
+    if not cited and known_ids:
+        reason_parts.append("нет цитат из найденных заметок")
+
+    passed = bool(
+        not unknown and not found_forbidden and (cited or not known_ids)
+    )
+    return SearchAnswerValidation(
+        passed=passed,
+        cited_note_ids=[cid for cid in cited if cid in known_ids],
+        unknown_citations=unknown,
+        forbidden_phrases_found=found_forbidden,
+        reason="; ".join(reason_parts) if reason_parts else "ответ валиден",
+    )
 
 
 def ask_question(config: AppConfig, state: StateManager, question: str) -> str:

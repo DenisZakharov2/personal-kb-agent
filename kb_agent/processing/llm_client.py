@@ -81,6 +81,9 @@ class LLMClient:
         self.provider = config.llm_provider
         self.timeout = float(getattr(config, "llm_timeout", 60.0))
         self.max_retries = max(0, int(getattr(config, "llm_max_retries", 2)))
+        # Ответ последнего вызова complete(): нужна для записи generation_log
+        # (токены, задержка, модель) без изменения сигнатуры методов.
+        self.last_response: Optional[LLMResponse] = None
 
         # Локальные провайдеры (Ollama и т.п.) не требуют API-ключа
         if not self.api_key and self.provider not in ("ollama", "local", "custom"):
@@ -118,7 +121,7 @@ class LLMClient:
         max_tokens = max_tokens or self.max_tokens
 
         if not self.api_key and self.provider not in ("ollama", "local", "custom"):
-            return LLMResponse(
+            self.last_response = LLMResponse(
                 text="",
                 model=model,
                 prompt_tokens=0,
@@ -126,6 +129,7 @@ class LLMClient:
                 latency_ms=0.0,
                 error="API ключ LLM не задан",
             )
+            return self.last_response
 
         payload = {
             "model": model,
@@ -156,7 +160,7 @@ class LLMClient:
 
                 if resp.status_code != 200:
                     logger.error("LLM ошибка %s: %s", resp.status_code, resp.text[:500])
-                    return LLMResponse(
+                    self.last_response = LLMResponse(
                         text="",
                         model=model,
                         prompt_tokens=0,
@@ -164,18 +168,20 @@ class LLMClient:
                         latency_ms=latency_ms,
                         error=f"HTTP {resp.status_code}: {resp.text[:200]}",
                     )
+                    return self.last_response
 
                 data = resp.json()
                 choice = data["choices"][0]
                 text = choice.get("message", {}).get("content", "")
                 usage = data.get("usage", {})
-                return LLMResponse(
+                self.last_response = LLMResponse(
                     text=text,
                     model=model,
                     prompt_tokens=usage.get("prompt_tokens", 0),
                     completion_tokens=usage.get("completion_tokens", 0),
                     latency_ms=latency_ms,
                 )
+                return self.last_response
             except Exception as exc:  # noqa: BLE001
                 last_error = str(exc)
                 if attempt + 1 < attempts:
@@ -186,7 +192,7 @@ class LLMClient:
                     time.sleep(0.5 * (2 ** attempt))
                     continue
                 logger.exception("Ошибка при вызове LLM API")
-                return LLMResponse(
+                self.last_response = LLMResponse(
                     text="",
                     model=model,
                     prompt_tokens=0,
@@ -194,9 +200,10 @@ class LLMClient:
                     latency_ms=(time.time() - start) * 1000,
                     error=last_error,
                 )
+                return self.last_response
 
         # Недостижимо (цикл всегда возвращает результат), но нужно для типизации
-        return LLMResponse(
+        self.last_response = LLMResponse(
             text="",
             model=model,
             prompt_tokens=0,
@@ -204,6 +211,7 @@ class LLMClient:
             latency_ms=(time.time() - start) * 1000,
             error=last_error or "неизвестная ошибка",
         )
+        return self.last_response
 
     def summarize(
         self,

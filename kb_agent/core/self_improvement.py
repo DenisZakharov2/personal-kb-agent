@@ -9,17 +9,24 @@
 from __future__ import annotations
 
 import difflib
+import json
 import os
+import sqlite3
 import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from kb_agent.config import load_config
+from kb_agent.config import PROJECT_ROOT, load_config
 from kb_agent.core.prompts import SUMMARIZE_PROMPT_NAME, ANSWER_PROMPT_NAME
+from kb_agent.core.search import SearchEngine
+from kb_agent.processing.llm_client import LLMClient
 from kb_agent.storage.state import StateManager
 from kb_agent.utils.logger import setup_logger
+
+# Порог прохождения eval-набора перед активацией нового промпта.
+EVAL_PASS_THRESHOLD = 0.5
 
 logger = setup_logger("kb_agent.core.self_improvement")
 
@@ -398,14 +405,82 @@ class SelfImprovementEngine:
     def _run_test_suite(self, proposal: ImprovementProposal) -> bool:
         """Базовая проверка предложенного изменения перед применением.
 
-        Пока проверяется только, что diff не пустой (есть реальные изменения).
-        Интеграцию с отдельным eval-набором (связанным через eval_set_id)
-        можно дореализовать отдельной задачей.
+        Проверяется, что diff не пустой (есть реальные изменения), и — если
+        есть eval-набор и накопленные заметки — запускается eval-проверка на
+        тестовом наборе (раздел 9 аудита: атомарная активация только после
+        проверки).
         """
         has_changes = bool(proposal.diff) and "(изменений нет)" not in proposal.diff
+        if not has_changes:
+            logger.info(
+                "Тестовый набор для предложения %s: не пройден (нет изменений)",
+                proposal.proposal_id,
+            )
+            return False
+        eval_passed = self._run_eval_check()
         logger.info(
             "Тестовый набор для предложения %s: %s",
             proposal.proposal_id,
-            "пройден" if has_changes else "не пройден (нет изменений)",
+            "пройден" if eval_passed else "не пройден",
         )
-        return has_changes
+        return eval_passed
+
+    def _run_eval_check(self) -> bool:
+        """Запускает eval-набор (tests/eval_set.json) перед активацией изменения.
+
+        Возвращает True, если eval-набор отсутствует, заметок ещё нет
+        (нечего оценивать) или доля пройденных вопросов >= порога.
+        """
+        eval_path = PROJECT_ROOT / "tests" / "eval_set.json"
+        if not eval_path.exists():
+            logger.info("Eval-набор не найден: %s, проверка пропущена", eval_path)
+            return True
+
+        try:
+            note_count = self.state.connect().execute(
+                "SELECT COUNT(*) AS c FROM notes"
+            ).fetchone()["c"]
+        except sqlite3.DatabaseError as exc:
+            logger.warning("Не удалось посчитать заметки для eval: %s", exc)
+            return True
+        if note_count == 0:
+            logger.info("Eval-проверка пропущена: в таблице notes пока нет заметок")
+            return True
+
+        try:
+            data = json.loads(eval_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            logger.warning("Не удалось прочитать eval-набор: %s", exc)
+            return True
+
+        questions = data.get("questions", data.get("eval_set", [])) or []
+        if not questions:
+            return True
+
+        llm = LLMClient(self.config)
+        engine = SearchEngine(self.config, self.state, llm)
+        total = 0
+        passed = 0
+        for question in questions:
+            total += 1
+            response = engine.search(question.get("question", ""), limit=5)
+            found_ids = {r.note_id for r in response.results}
+            expected = set(question.get("expected_note_ids") or [])
+            forbidden = set(question.get("forbidden_hallucinations") or [])
+            ok = True
+            if expected and not (expected & found_ids):
+                ok = False
+            answer = response.answer or ""
+            if forbidden and any(phrase in answer for phrase in forbidden):
+                ok = False
+            if ok:
+                passed += 1
+
+        rate = passed / total if total else 0.0
+        logger.info(
+            "Eval-проверка: %d/%d вопросов пройдено (порог %s)",
+            passed,
+            total,
+            EVAL_PASS_THRESHOLD,
+        )
+        return rate >= EVAL_PASS_THRESHOLD

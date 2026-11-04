@@ -28,6 +28,7 @@ from kb_agent.cli.commands.process import (
     process_doctor,
     process_reindex,
     process_retry,
+    process_skipped,
 )
 from kb_agent.cli.commands.confirm import confirm_command
 from kb_agent.cli.commands.pending import pending_command
@@ -116,7 +117,22 @@ app.command(name="doctor", help="Проверка целостности баз�
     process_doctor
 )
 app.command(name="retry", help="Повторная обработка элемента очереди")(process_retry)
+app.command(
+    name="skipped",
+    help="Просмотр пропущенных/ошибочных элементов очереди (kb-agent retry <id> вернёт в new)",
+)(process_skipped)
 app.command(name="backup", help="Экспорт SQLite + vault в zip-архив")(process_backup)
+
+
+# Импорт существующих Markdown/TXT файлов (раздел 9 аудита).
+# Регистрируется отдельно: «import» — зарезервированное слово Python, поэтому
+# модуль kb_agent.cli.commands.import загружается через importlib, а его
+# единственная команда выносится на корень как `kb-agent import <путь>`.
+import importlib
+
+_import_app = importlib.import_module("kb_agent.cli.commands.import").app
+for _command in _import_app.registered_commands:
+    app.command(name=_command.name or "import", help=_command.help)(_command.callback)
 
 
 if __name__ == "__main__":
