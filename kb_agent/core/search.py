@@ -11,10 +11,14 @@ from typing import Optional
 from kb_agent.config import AppConfig
 from kb_agent.core.prompts import get_active_system_prompt
 from kb_agent.processing.llm_client import LLMClient
-from kb_agent.storage.state import StateManager
+from kb_agent.storage.state import StateManager, _WORD_RE
 from kb_agent.utils.logger import setup_logger
 
 logger = setup_logger("kb_agent.core.search")
+
+# Окно релевантного фрагмента (в символах) вокруг совпадения, используемое
+# в контексте LLM вместо первых 1500 символов заметки (P2-11).
+SNIPPET_WINDOW = 240
 
 
 @dataclass
@@ -27,6 +31,8 @@ class SearchResult:
     topic: str
     content: str
     score: float = 0.0
+    # Релевантный фрагмент вокруг совпадения запроса (P2-11).
+    snippet: str = ""
     # Поля provenience (из таблицы notes): источник, путь, версия и hash.
     canonical_url: Optional[str] = None
     source_id: Optional[str] = None
@@ -34,6 +40,32 @@ class SearchResult:
     file_path: Optional[str] = None
     content_hash: Optional[str] = None
     revision: Optional[int] = None
+
+
+def _make_snippet(content: str, query_terms: list[str], window: int = SNIPPET_WINDOW) -> str:
+    """Возвращает фрагмент контента вокруг первого совпадения любого термина запроса.
+
+    Если ни один термин не найден — возвращает начало контента. Окружает
+    фрагмент многоточиями, если он обрезан по краям.
+    """
+    if not content or not query_terms:
+        return content[:window] if content else ""
+    lower = content.lower()
+    best_pos: Optional[int] = None
+    for term in query_terms:
+        pos = lower.find(term.lower())
+        if pos != -1 and (best_pos is None or pos < best_pos):
+            best_pos = pos
+    if best_pos is None:
+        return content[:window]
+    start = max(0, best_pos - window // 2)
+    end = min(len(content), best_pos + window // 2)
+    snippet = content[start:end]
+    if start > 0:
+        snippet = "…" + snippet
+    if end < len(content):
+        snippet = snippet + "…"
+    return snippet.strip()
 
 
 @dataclass
@@ -61,15 +93,26 @@ class SearchEngine:
 
         # FTS5 поиск
         rows = self.state.search(query, limit=limit)
+        query_terms = _WORD_RE.findall(query or "")
         results: list[SearchResult] = []
+        best_rank: Optional[float] = None
         for row in rows:
+            rank = row.get("rank")
+            if isinstance(rank, (int, float)):
+                best_rank = rank if best_rank is None else min(best_rank, rank)
+            # FTS5 rank: чем меньше, тем лучше. Переводим в score 0.0-1.0,
+            # где лучше ранга выше score. Лучший результат в выдаче -> ~1.0.
+            score = max(0.0, min(1.0, 1.0 + (rank or 0.0)))
+            content = row.get("content", "") or ""
             results.append(
                 SearchResult(
                     note_id=row["note_id"],
                     title=row["title"] or "Без названия",
                     tags=row["tags"] or "",
                     topic=row["topic"] or "",
-                    content=row.get("content", "") or "",
+                    content=content,
+                    score=score,
+                    snippet=_make_snippet(content, query_terms),
                     canonical_url=row.get("canonical_url"),
                     source_id=row.get("source_id"),
                     external_id=row.get("external_id"),
@@ -86,12 +129,14 @@ class SearchEngine:
             response.answer = "В базе недостаточно данных по вашему запросу."
             return response
 
-        # Формируем контекст для LLM из топ-N заметок
+        # Формируем контекст для LLM из топ-N заметок (релевантный фрагмент,
+        # а не первые 1500 символов — P2-11)
         context_parts: list[str] = []
         sources: list[str] = []
         for r in results:
+            context_text = r.snippet or r.content[:SNIPPET_WINDOW]
             context_parts.append(
-                f"--- Заметка: {r.title} (ID: {r.note_id}, теги: {r.tags}) ---\n{r.content[:1500]}"
+                f"--- Заметка: {r.title} (ID: {r.note_id}, теги: {r.tags}, score: {r.score:.2f}) ---\n{context_text}"
             )
             sources.append(f"{r.title} (ID: {r.note_id})")
 
