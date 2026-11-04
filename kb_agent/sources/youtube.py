@@ -95,49 +95,94 @@ def _format_transcript(segments: list[dict]) -> str:
     return "\n".join(lines).strip()
 
 
-def _fetch_transcript(video_id: str, video_url: str, langs: list[str]) -> Optional[str]:
-    tmp = Path(tempfile.mkdtemp(prefix="yt_subs_"))
+def _download_subs(
+    tmp: Path,
+    video_id: str,
+    video_url: str,
+    lang: str,
+    *,
+    write_auto: bool,
+) -> Optional[str]:
+    """Скачивает субтитры одного языка (ручные или автоматические).
+
+    ``write_auto=True`` запрашивает автоматические субтитры YouTube
+    (``--write-auto-subs``), когда у автора нет собственных дорожек.
+    Возвращает отформатированную транскрипцию или None.
+    """
     out_tmpl = str(tmp / "%(id)s")
-    for lang in langs:
-        cmd = [
-            "yt-dlp", "--skip-download", "--write-subs",
-            "--sub-lang", lang, "--sub-format", "json3",
-            "--output", out_tmpl, video_url,
-        ]
-        try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-        except subprocess.TimeoutExpired:
-            logger.warning("  %s | таймаут при скачивании субтитров (%s)", video_id, lang)
-            continue
-        if result.returncode != 0:
-            logger.warning("  %s | yt-dlp ошибка (%s): %s", video_id, lang, result.stderr[:200])
-            continue
+    kind = "авто" if write_auto else "ручные"
+    cmd = [
+        "yt-dlp",
+        "--skip-download",
+        "--write-auto-subs" if write_auto else "--write-subs",
+        "--sub-lang",
+        lang,
+        "--sub-format",
+        "json3",
+        "--output",
+        out_tmpl,
+        video_url,
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+    except subprocess.TimeoutExpired:
+        logger.warning("  %s | таймаут при скачивании %s субтитров (%s)", video_id, kind, lang)
+        return None
+    if result.returncode != 0:
+        logger.warning(
+            "  %s | yt-dlp ошибка (%s субтитры, %s): %s",
+            video_id,
+            kind,
+            lang,
+            result.stderr[:200],
+        )
+        return None
 
-        # Ищем файл субтитров нужного языка
-        lang_file = tmp.glob(f"{video_id}.{lang}.json3")
-        lang_candidates = list(lang_file)
-        if not lang_candidates:
-            # Пробуем любой json3 файл для этого видео
-            any_candidates = list(tmp.glob(f"{video_id}.*.json3"))
-            if not any_candidates:
-                logger.warning("  %s | субтитры не найдены (%s)", video_id, lang)
-                continue
-            raw_path = any_candidates[0]
-        else:
-            raw_path = lang_candidates[0]
+    lang_file = tmp.glob(f"{video_id}.{lang}.json3")
+    lang_candidates = list(lang_file)
+    if not lang_candidates:
+        # Пробуем любой json3 файл для этого видео
+        any_candidates = list(tmp.glob(f"{video_id}.*.json3"))
+        if not any_candidates:
+            logger.warning("  %s | %s субтитры не найдены (%s)", video_id, kind, lang)
+            return None
+        raw_path = any_candidates[0]
+    else:
+        raw_path = lang_candidates[0]
 
-        try:
-            raw = raw_path.read_text(encoding="utf-8", errors="replace")
-        except Exception as exc:
-            logger.warning("  %s | ошибка чтения субтитров: %s", video_id, exc)
-            continue
+    try:
+        raw = raw_path.read_text(encoding="utf-8", errors="replace")
+    except Exception as exc:
+        logger.warning("  %s | ошибка чтения субтитров: %s", video_id, exc)
+        return None
 
-        segments = _parse_json3_subtitles(raw)
-        if segments:
-            logger.info("  %s | субтитры найдены (%s, %d сегментов)", video_id, lang, len(segments))
-            return _format_transcript(segments)
-        else:
-            logger.warning("  %s | субтитры пустые (%s)", video_id, lang)
+    segments = _parse_json3_subtitles(raw)
+    if segments:
+        logger.info(
+            "  %s | %s субтитры найдены (%s, %d сегментов)",
+            video_id,
+            kind,
+            lang,
+            len(segments),
+        )
+        return _format_transcript(segments)
+    logger.warning("  %s | %s субтитры пустые (%s)", video_id, kind, lang)
+    return None
+
+
+def _fetch_transcript(video_id: str, video_url: str, langs: list[str]) -> Optional[str]:
+    """Скачивает субтитры видео: сначала ручные, потом автоматические.
+
+    Временная директория удаляется автоматически после завершения.
+    """
+    with tempfile.TemporaryDirectory(prefix="yt_subs_") as tmp_dir:
+        tmp = Path(tmp_dir)
+        for lang in langs:
+            transcript = _download_subs(tmp, video_id, video_url, lang, write_auto=False)
+            if transcript is None:
+                transcript = _download_subs(tmp, video_id, video_url, lang, write_auto=True)
+            if transcript:
+                return transcript
     return None
 
 
@@ -220,6 +265,7 @@ def _collect_one_channel(
             title=title,
             raw_text=raw_text,
             raw_hash=raw_hash,
+            published_at=v.get("upload_date"),
         )
         if queue_id is None:
             skipped_for_channel += 1
