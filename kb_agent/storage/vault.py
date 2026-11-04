@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import hashlib
 import os
-import re
 from pathlib import Path
 from typing import Optional
 
@@ -16,6 +15,7 @@ import yaml
 
 from kb_agent.config import AppConfig
 from kb_agent.utils.logger import setup_logger
+from kb_agent.utils.slug import slugify
 
 logger = setup_logger("kb_agent.storage.vault")
 
@@ -38,14 +38,6 @@ def atomic_write_text(path: Path, text: str, backup: bool = True) -> None:
     os.replace(tmp_path, path)
 
 
-def _slugify(text: str) -> str:
-    """Преобразует текст в безопасное имя папки/файла."""
-    text = text.strip().lower()
-    text = re.sub(r"[^\w\s-]", "", text, flags=re.UNICODE)
-    text = re.sub(r"[\s_]+", "_", text)
-    return text[:80] or "Общее"
-
-
 class VaultManager:
     """Работа с файловой системой Obsidian vault."""
 
@@ -56,7 +48,7 @@ class VaultManager:
 
     def _topic_folder(self, topic: str) -> Path:
         """Папка по тематике (из профиля или 'Общее')."""
-        folder_name = _slugify(topic)
+        folder_name = slugify(topic)
         folder = self.vault_path / folder_name
         folder.mkdir(parents=True, exist_ok=True)
         return folder
@@ -82,11 +74,11 @@ class VaultManager:
         Запись атомарная: через временный файл с последующей заменой.
         """
         folder = self._topic_folder(topic)
-        file_name = f"{received_at[:10]}_{_slugify(title)}.md"
+        file_name = f"{received_at[:10]}_{slugify(title)}.md"
         file_path = folder / file_name
 
         if file_path.exists():
-            file_name = f"{received_at[:10]}_{_slugify(title)}_{note_id[:8]}.md"
+            file_name = f"{received_at[:10]}_{slugify(title)}_{note_id[:8]}.md"
             file_path = folder / file_name
 
         frontmatter = {

@@ -1,15 +1,13 @@
-"""Базовый класс для источников данных (Этап 2/5).
+"""Конфигурация источников данных и العناصر сбора (Этап 2/5).
 
-Каждый источник наследуется от BaseSource и реализует fetch() — получение
-сырых материалов из конкретного канала/сайта.
+SourceConfig описывает один источник (тип, URL, флаг enabled). SourceItem —
+один собранный элемент из источника.
 """
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Optional
-
 
 @dataclass
 class SourceConfig:
@@ -61,21 +59,3 @@ class SourceItem:
     raw_text: str
     raw_hash: str
     published_at: Optional[str] = None
-
-
-class BaseSource(ABC):
-    """Абстрактный источник данных."""
-
-    def __init__(self, source_config: SourceConfig) -> None:
-        self.config = source_config
-
-    @abstractmethod
-    def fetch(self, limit: int) -> list[SourceItem]:
-        """Собирает элементы из источника. Возвращает список SourceItem."""
-        ...
-
-    @property
-    @abstractmethod
-    def source_type(self) -> str:
-        """Тип источника (telegram, youtube, ...)."""
-        ...

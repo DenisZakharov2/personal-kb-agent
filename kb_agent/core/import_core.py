@@ -8,7 +8,6 @@
 from __future__ import annotations
 
 import hashlib
-import re
 import yaml
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -18,6 +17,7 @@ from kb_agent.config import AppConfig
 from kb_agent.storage.state import StateManager
 from kb_agent.storage.vault import VaultManager
 from kb_agent.utils.logger import setup_logger
+from kb_agent.utils.slug import slugify
 
 logger = setup_logger("kb_agent.core.import_core")
 
@@ -63,13 +63,6 @@ def _parse_frontmatter(content: str) -> tuple[dict, str]:
         return {}, content
 
 
-def _slugify(text: str) -> str:
-    text = text.strip().lower()
-    text = re.sub(r"[^\w\s-]", "", text, flags=re.UNICODE)
-    text = re.sub(r"[\s_]+", "_", text)
-    return text[:80] or "Общее"
-
-
 class CoreImporter:
     def __init__(self, config: AppConfig, state: StateManager) -> None:
         self.config = config
@@ -110,7 +103,7 @@ class CoreImporter:
                 tags_str = ",".join(tags)
 
                 source_type = fm.get("source", "import")
-                source_id = fm.get("source_id", f"import_{_slugify(f.stem)}")
+                source_id = fm.get("source_id", f"import_{slugify(f.stem)}")
                 external_id = fm.get("external_id", "")
                 canonical_url = fm.get("url", "")
                 published_at = fm.get("published_at")

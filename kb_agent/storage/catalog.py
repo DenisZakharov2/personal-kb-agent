@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 from typing import Optional
 
@@ -13,15 +12,9 @@ import yaml
 
 from kb_agent.storage.vault import VaultManager, atomic_write_text
 from kb_agent.utils.logger import setup_logger
+from kb_agent.utils.slug import slugify
 
 logger = setup_logger("kb_agent.storage.catalog")
-
-
-def _slugify(text: str) -> str:
-    text = text.strip().lower()
-    text = re.sub(r"[^\w\s-]", "", text, flags=re.UNICODE)
-    text = re.sub(r"[\s_]+", "_", text)
-    return text[:80] or "Общее"
 
 
 class CatalogGenerator:
