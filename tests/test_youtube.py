@@ -119,3 +119,65 @@ class TestYouTubeDedup:
         assert stats["new"] == 0
         # _fetch_transcript НЕ должен вызываться для уже обработанного видео
         mock_fetch_transcript.assert_not_called()
+
+
+class TestYouTubeAutoSubs:
+    """P2-06: fallback на автоматические субтитры и очистка TemporaryDirectory."""
+
+    @patch("kb_agent.sources.youtube.subprocess.run")
+    def test_fetch_transcript_tries_auto_subs_when_manual_fails(self, mock_run):
+        """При неудаче ручных субтитров делается попытка автоматических."""
+        fail_result = MagicMock()
+        fail_result.returncode = 1
+        fail_result.stderr = "no subtitles"
+        mock_run.side_effect = [fail_result, fail_result]
+
+        result = _fetch_transcript(
+            video_id="vid1",
+            video_url="https://youtube.com/watch?v=vid1",
+            langs=["ru"],
+        )
+        assert result is None
+        # Ручные субтитры + автоматические субтитры = 2 вызова yt-dlp
+        assert mock_run.call_count == 2
+
+
+class TestYouTubePublishedAt:
+    """P1-04/P2-06: upload_date сохраняется в published_at при постановке в очередь."""
+
+    @patch("kb_agent.sources.youtube._fetch_channel_videos")
+    @patch("kb_agent.sources.youtube._filter_by_date")
+    @patch("kb_agent.sources.youtube._fetch_transcript")
+    def test_collect_one_channel_publishes_upload_date(
+        self, mock_fetch_transcript, mock_filter, mock_fetch_videos, state
+    ):
+        """Дата публикации видео записывается в raw_queue.published_at."""
+        mock_fetch_videos.return_value = [
+            {
+                "id": "vid1",
+                "title": "Video 1",
+                "description": "desc1",
+                "webpage_url": "https://youtube.com/watch?v=vid1",
+                "upload_date": "20260105",
+            },
+        ]
+        mock_filter.side_effect = lambda v, m: v
+        mock_fetch_transcript.return_value = None
+
+        stats = _collect_one_channel(
+            state=state,
+            channel_url="https://youtube.com/@test",
+            langs="ru",
+            months=1,
+            limit=1,
+            source_id="yt_test",
+        )
+
+        assert stats["new"] == 1
+        conn = state.connect()
+        row = conn.execute(
+            "SELECT published_at FROM raw_queue WHERE external_id = ?",
+            ("yt_vid1",),
+        ).fetchone()
+        assert row is not None
+        assert row["published_at"] == "20260105"
