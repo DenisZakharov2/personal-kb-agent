@@ -43,7 +43,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-youtube = ["yt-dlp>=2024.08,<2026"]
+youtube = ["yt-dlp>=2024.08,<2027"]
 dev = [
     "pytest>=8,<9",
     "ruff>=0.8,<1",
