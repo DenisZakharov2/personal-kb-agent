@@ -98,3 +98,54 @@ class TestStateIndexNoteDedup:
         row = conn.execute("SELECT revision FROM notes WHERE note_id = ?", ("note-2",)).fetchone()
         assert row is not None
         assert row["revision"] == 2
+
+
+class TestStateSearchProvenance:
+    """P2-05: search() возвращает поля provenance (URL, источник, путь, ревизия)."""
+
+    def test_search_returns_provenance_fields(self, config, state):
+        """Результат поиска содержит canonical_url, source_id, file_path, content_hash, revision."""
+        state.index_note(
+            note_id="note-prov-1",
+            title="Заголовок про ИИ",
+            tags="ии",
+            topic="Технологии",
+            content="Текст про нейросети и машинное обучение",
+            source_id="tg_test",
+            external_id="yt_vid1",
+            canonical_url="https://t.me/s/test/42",
+            file_path="/vault/note.md",
+            content_hash="abc123",
+            revision=1,
+        )
+
+        results = state.search("нейросети", limit=5)
+        assert len(results) == 1
+        row = results[0]
+        assert row["note_id"] == "note-prov-1"
+        assert row["canonical_url"] == "https://t.me/s/test/42"
+        assert row["source_id"] == "tg_test"
+        assert row["external_id"] == "yt_vid1"
+        assert row["file_path"] == "/vault/note.md"
+        assert row["content_hash"] == "abc123"
+        assert row["revision"] == 1
+        assert row["title"] == "Заголовок про ИИ"
+
+    def test_search_missing_notes_row_returns_nulls(self, config, state):
+        """Если записи в notes нет (только FTS), поля provenance — NULL."""
+        conn = state.connect()
+        conn.execute(
+            "INSERT INTO notes_fts (note_id, title, tags, topic, content) VALUES (?, ?, ?, ?, ?)",
+            ("note-fts-only", "Заголовок", "тэг", "Тема", "текст про поиск"),
+        )
+        conn.commit()
+
+        results = state.search("поиск", limit=5)
+        assert len(results) == 1
+        row = results[0]
+        assert row["note_id"] == "note-fts-only"
+        assert row["canonical_url"] is None
+        assert row["source_id"] is None
+        assert row["file_path"] is None
+        assert row["content_hash"] is None
+        assert row["revision"] is None
