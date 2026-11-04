@@ -255,21 +255,34 @@ class PendingManager:
 
         try:
             if action == "add_source":
-                self.state.add_source(
+                new_id = self.state.add_source(
                     source_id=parameters["source_id"],
                     source_type=parameters["source_type"],
                     channel=parameters["channel"],
                     enabled=parameters.get("enabled", True),
                     conn=c,
                 )
+                if new_id is None:
+                    return self._apply_failed(
+                        change, c, own,
+                        f"Источник {parameters['source_id']} уже существует",
+                    )
             elif action == "remove_source":
-                self.state.remove_source(parameters["source_id"], conn=c)
+                if not self.state.remove_source(parameters["source_id"], conn=c):
+                    return self._apply_failed(
+                        change, c, own,
+                        f"Источник {parameters['source_id']} не найден",
+                    )
             elif action == "enable_source":
-                self.state.set_source_enabled(
+                if not self.state.set_source_enabled(
                     parameters["source_id"],
                     parameters.get("enabled", True),
                     conn=c,
-                )
+                ):
+                    return self._apply_failed(
+                        change, c, own,
+                        f"Источник {parameters['source_id']} не найден",
+                    )
             elif action == "update_profile":
                 self._update_profile(parameters)
             elif action == "revert_prompt":
@@ -298,6 +311,32 @@ class PendingManager:
         if own:
             c.commit()
         return True
+
+    def _apply_failed(
+        self,
+        change: dict,
+        c: sqlite3.Connection,
+        own: bool,
+        error: str,
+    ) -> bool:
+        """Фиксирует неуспешное применение: пишет result со статусом failed и возвращает False.
+
+        Вызывается, когда метод StateManager вернул «пустой» результат
+        (None / False), т. е. фактически ничего не изменилось, и pending-запрос
+        не должен получить ложный статус applied.
+        """
+        result = {
+            "applied_at": datetime.now(timezone.utc).isoformat(),
+            "status": "failed",
+            "error": error,
+        }
+        self._save_result(change["change_id"], result, conn=c)
+        if own:
+            c.rollback()
+        logger.error(
+            "Pending-запрос %s не применён: %s", change["change_id"], error
+        )
+        return False
 
     def _save_result(
         self, change_id: str, result: dict, conn: Optional[sqlite3.Connection] = None
