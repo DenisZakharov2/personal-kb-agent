@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
 
 from kb_agent.config import AppConfig
 from kb_agent.storage.state import StateManager
@@ -48,12 +47,14 @@ class KnowledgeUpdater:
 
         # Используем FTS5 поиск по самому себе — ищем заметки с похожим содержимым
         # В простой реализации: ищем пары с общими тегами и похожими заголовками
-        import sqlite3
-
         conn = self.state.connect()
         rows = conn.execute(
             """
-            SELECT n1.note_id, n1.title, n2.note_id, n2.title
+            SELECT
+                n1.note_id AS note_id_1,
+                n1.title AS title_1,
+                n2.note_id AS note_id_2,
+                n2.title AS title_2
             FROM notes_fts n1
             JOIN notes_fts n2 ON n1.note_id < n2.note_id
             WHERE n1.tags = n2.tags AND n1.tags != ''
@@ -65,10 +66,10 @@ class KnowledgeUpdater:
         for row in rows:
             report.duplicates.append(
                 DuplicatePair(
-                    note_id_1=row["note_id"],
-                    title_1=row["title"] or "Без названия",
-                    note_id_2=row["note_id"],
-                    title_2=row["title"] or "Без названия",
+                    note_id_1=row["note_id_1"],
+                    title_1=row["title_1"] or "Без названия",
+                    note_id_2=row["note_id_2"],
+                    title_2=row["title_2"] or "Без названия",
                     similarity_reason="Общие теги",
                 )
             )

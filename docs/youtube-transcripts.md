@@ -45,7 +45,7 @@
 ## Команда
 
 ```bash
-python3 scripts/collect_youtube.py transcripts
+python3 scripts/legacy/collect_youtube.py transcripts
 ```
 
 Опция `--limit N` ограничивает количество видео за один запуск (по умолчанию все pending).

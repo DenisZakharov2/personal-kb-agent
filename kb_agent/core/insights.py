@@ -1,12 +1,16 @@
 """Двигатель инсайтов базы знаний (Этап 3).
 
-Выявляет повторяющиеся темы, связи между заметками и пробелы в покрытии.
+Выявляет повторяющиеся темы, связи между заметками и пробелы в покрытии тем
+из профиля пользователя. Поиск семантических противоречий требует LLM-анализа
+и пока не реализован (см. `_find_contradictions`).
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
+from pathlib import Path
+
+import yaml
 
 from kb_agent.config import AppConfig
 from kb_agent.storage.state import StateManager
@@ -41,43 +45,103 @@ class InsightsEngine:
         self.state = state
 
     def get_insights(self, limit: int = 5) -> InsightsResponse:
-        """Возвращает инсайты: повторяющиеся темы, связи, пробелы."""
+        """Возвращает инсайты: повторяющиеся темы, пробелы, связи."""
         insights: list[Insight] = []
+        insights.extend(self._find_repeating_themes())
+        insights.extend(self._find_gaps())
+        insights.extend(self._find_contradictions())
+        insights.extend(self._find_existing_links())
+        return InsightsResponse(insights=insights[:limit])
 
-        # 1. Повторяющиеся темы — ищем заметки с одинаковыми тегами
-        theme_insights = self._find_repeating_themes()
-        insights.extend(theme_insights)
+    # ---- Вспомогательное ----
 
-        # 2. Конфликтующие темы — ищем заметки с противоположной окраской
-        conflict_insights = self._find_contradictions()
-        insights.extend(conflict_insights)
+    def _tag_index(self) -> dict[str, list[str]]:
+        """tag -> список note_id."""
+        conn = self.state.connect()
+        rows = conn.execute("SELECT note_id, tags FROM notes_fts").fetchall()
+        index: dict[str, list[str]] = {}
+        for row in rows:
+            for tag in (row["tags"] or "").split(","):
+                tag = tag.strip()
+                if tag:
+                    index.setdefault(tag.lower(), []).append(row["note_id"])
+        return index
 
-        # 3. Связи между заметками — существующие note_links
-        link_insights = self._find_existing_links()
-        insights.extend(link_insights)
+    def _profile_topics(self) -> list[str]:
+        """Темы из профиля пользователя (секция user)."""
+        path = Path(self.config.profile_path)
+        if not path.exists():
+            return []
+        try:
+            data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Не удалось прочитать профиль: %s", exc)
+            return []
+        user = data.get("user", {}) if isinstance(data, dict) else {}
+        topics = user.get("topics") or []
+        if isinstance(topics, str):
+            topics = [t.strip() for t in topics.split(",") if t.strip()]
+        return [str(topic).strip() for topic in topics if str(topic).strip()]
 
-        # Ограничиваем количество
-        insights = insights[:limit]
+    # ---- Типы инсайтов ----
 
-        return InsightsResponse(insights=insights)
-
-    def _find_repeating_themes(self) -> list[Insight]:
-        """Находит темы, которые встречаются в нескольких заметках."""
+    def _find_repeating_themes(self, max_insights: int = 10) -> list[Insight]:
+        """Находит теги, которые встречаются в нескольких заметках."""
         insights: list[Insight] = []
-        # Простой подход: ищем теги, которые повторяются
-        # В реальности здесь можно сделать SQL-запрос по notes_fts или по тегам
+        for tag, note_ids in sorted(self._tag_index().items(), key=lambda kv: -len(kv[1])):
+            if len(note_ids) < 2:
+                # Список отсортирован по убыванию: дальше только одиночные теги
+                break
+            insights.append(
+                Insight(
+                    statement=f"Тема «{tag}» повторяется в заметках: {len(note_ids)}",
+                    evidence_note_ids=note_ids[:10],
+                    link_type="repeating_theme",
+                    confidence="high" if len(note_ids) >= 3 else "medium",
+                    benefit="Материалы по теме можно собрать в подборку или цикл",
+                )
+            )
+            if len(insights) >= max_insights:
+                break
+        return insights
+
+    def _find_gaps(self) -> list[Insight]:
+        """Темы из профиля, по которым в базе ещё нет материалов."""
+        topics = self._profile_topics()
+        if not topics:
+            return []
+
+        conn = self.state.connect()
+        rows = conn.execute(
+            "SELECT title, tags, topic, content FROM notes_fts"
+        ).fetchall()
+        haystack = " ".join(
+            " ".join(str(row[key] or "") for key in ("title", "tags", "topic", "content"))
+            for row in rows
+        ).lower()
+
+        insights: list[Insight] = []
+        for topic in topics:
+            if topic.lower() in haystack:
+                continue
+            insights.append(
+                Insight(
+                    statement=f"По теме «{topic}» из профиля ещё нет материалов",
+                    evidence_note_ids=[],
+                    link_type="gap",
+                    confidence="high",
+                    benefit="Подсказывает, какие источники стоит добавить",
+                )
+            )
         return insights
 
     def _find_contradictions(self) -> list[Insight]:
-        """Находит противоречивые утверждения между заметками."""
-        insights: list[Insight] = []
-        # Требует семантического анализа — пока заглушка
-        return insights
+        """Противоречия между заметками (требует семантического анализа)."""
+        logger.debug("Поиск противоречий не реализован: требуется LLM-анализ заметок")
+        return []
 
     def _find_existing_links(self) -> list[Insight]:
         """Находит существующие связи между заметками в note_links."""
-        import sqlite3
-
         insights: list[Insight] = []
         conn = self.state.connect()
         rows = conn.execute(

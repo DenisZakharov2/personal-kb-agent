@@ -7,22 +7,17 @@ kb-agent process digest — запустить конвейер и вывест�
 
 from __future__ import annotations
 
-import json
 import typer
 
 from kb_agent.config import load_config
 from kb_agent.processing.pipeline import Pipeline, run_digest
 from kb_agent.storage.state import StateManager
 from kb_agent.utils.logger import setup_logger
+from kb_agent.cli.output import output_json as _output_json
 
 app = typer.Typer(help="Конвейер наполнения базы знаний")
 
 logger = setup_logger("kb_agent.process")
-
-
-def _output_json(data: dict) -> None:
-    """Выводит данные в формате JSON."""
-    typer.echo(json.dumps(data, ensure_ascii=False, indent=2))
 
 
 @app.command("run")

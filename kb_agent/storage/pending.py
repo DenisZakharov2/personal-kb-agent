@@ -254,8 +254,9 @@ class PendingManager:
                 (prompt_name,),
             ).fetchone()
             if not current:
-                logger.warning("Нет активной версии промпта %s", prompt_name)
-                return
+                # Ошибку пробрасываем наверх, чтобы pending-запрос получил статус failed,
+                # а не «applied» при фактически неприменённом изменении.
+                raise ValueError(f"Нет активной версии промпта {prompt_name}")
             target_version = current["version"] - 1
 
         target = conn.execute(
@@ -266,8 +267,7 @@ class PendingManager:
             (prompt_name, target_version),
         ).fetchone()
         if not target:
-            logger.warning("Версия %s промпта %s не найдена", target_version, prompt_name)
-            return
+            raise ValueError(f"Версия {target_version} промпта {prompt_name} не найдена")
 
         conn.execute(
             "UPDATE prompt_history SET is_active = 0 WHERE prompt_name = ?",

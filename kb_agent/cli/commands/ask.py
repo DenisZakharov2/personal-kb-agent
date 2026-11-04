@@ -10,24 +10,18 @@
 
 from __future__ import annotations
 
-import json
 import typer
-from typing import Optional
 
 from kb_agent.config import load_config
-from kb_agent.core.search import SearchEngine, ask_question
+from kb_agent.core.search import SearchEngine, SearchResult, format_search_response
 from kb_agent.core.insights import InsightsEngine
 from kb_agent.core.update import KnowledgeUpdater
 from kb_agent.processing.llm_client import LLMClient
 from kb_agent.storage.state import StateManager
 from kb_agent.utils.logger import setup_logger
+from kb_agent.cli.output import output_json as _output_json
 
 logger = setup_logger("kb_agent.commands.ask")
-
-
-def _output_json(data: dict) -> None:
-    """Выводит данные в формате JSON."""
-    typer.echo(json.dumps(data, ensure_ascii=False, indent=2))
 
 
 def ask_command(
@@ -68,7 +62,7 @@ def ask_command(
                 }
             )
         else:
-            typer.echo(ask_question(config, state, question))
+            typer.echo(format_search_response(question, response))
     finally:
         state.close()
 
@@ -88,15 +82,22 @@ def search_command(
     state = StateManager(config.db_path)
     try:
         state.init_db()
-        llm = LLMClient(config)
-        engine = SearchEngine(config, state, llm)
-        response = engine.search(query, limit=limit)
+        results = [
+            SearchResult(
+                note_id=row["note_id"],
+                title=row["title"] or "Без названия",
+                tags=row["tags"] or "",
+                topic=row["topic"] or "",
+                content=row.get("content", "") or "",
+            )
+            for row in state.search(query, limit=limit)
+        ]
 
         if json_output:
             _output_json(
                 {
                     "query": query,
-                    "found": len(response.results),
+                    "found": len(results),
                     "results": [
                         {
                             "note_id": r.note_id,
@@ -105,15 +106,15 @@ def search_command(
                             "topic": r.topic,
                             "content": r.content,
                         }
-                        for r in response.results
+                        for r in results
                     ],
                 }
             )
         else:
             typer.echo(f"## Результаты поиска: {query}")
-            typer.echo(f"Найдено: {len(response.results)}")
+            typer.echo(f"Найдено: {len(results)}")
             typer.echo("")
-            for r in response.results:
+            for r in results:
                 typer.echo(
                     f"- **{r.title}** (ID: {r.note_id}, теги: {r.tags}, тема: {r.topic})"
                 )

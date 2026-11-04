@@ -6,24 +6,19 @@ kb-agent self-improve rollback <prompt> <version> — откатить пром�
 
 from __future__ import annotations
 
-import json
 import typer
 
 from kb_agent.config import load_config
 from kb_agent.core.self_improvement import SelfImprovementEngine
 from kb_agent.storage.state import StateManager
 from kb_agent.utils.logger import setup_logger
+from kb_agent.cli.output import output_json as _output_json
 
 app = typer.Typer(
     help="Самоулучшение базы знаний под наблюдением человека (Этап 5)",
     invoke_without_command=True,
 )
 logger = setup_logger("kb_agent.cli.self_improve")
-
-
-def _output_json(data: dict) -> None:
-    """Выводит данные в формате JSON."""
-    typer.echo(json.dumps(data, ensure_ascii=False, indent=2))
 
 
 @app.callback()

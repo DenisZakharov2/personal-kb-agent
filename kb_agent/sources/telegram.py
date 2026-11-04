@@ -1,6 +1,6 @@
 """Сборщик постов из Telegram-каналов (Этап 2).
 
-Логика перенесена из scripts/collect_telegram.py, но запись теперь ведётся
+Логика перенесена из scripts/legacy/collect_telegram.py, но запись теперь ведётся
 в SQLite-таблицу raw_queue вместо файла _queue.jsonl.
 """
 
@@ -8,13 +8,11 @@ from __future__ import annotations
 
 import hashlib
 import re
-from datetime import datetime, timezone
 from typing import Optional
 
 import requests
 from bs4 import BeautifulSoup
 
-from kb_agent.config import AppConfig
 from kb_agent.storage.state import StateManager
 from kb_agent.utils.logger import setup_logger
 
@@ -97,30 +95,6 @@ def fetch_channel_posts(channel: str, limit: int) -> list[dict]:
             "is_spam": _is_spam(text),
         })
     return posts
-
-
-def collect_telegram(config: AppConfig, state: StateManager) -> dict:
-    """Собирает посты из всех Telegram-каналов и пишет в raw_queue.
-
-    Возвращает статистику: сколько получено, новых, пропущено спама.
-    """
-    channels = [c.strip() for c in config.telegram_channels.split(",") if c.strip()]
-    total_new = 0
-    total_spam = 0
-    total_existing = 0
-
-    for channel in channels:
-        stats = _collect_one_channel(state, channel, config.limit)
-        total_new += stats["new"]
-        total_spam += stats["spam"]
-        total_existing += stats["existing"]
-
-    return {
-        "source": "telegram",
-        "new": total_new,
-        "spam": total_spam,
-        "existing": total_existing,
-    }
 
 
 def collect_telegram_source(

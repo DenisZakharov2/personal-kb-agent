@@ -13,6 +13,10 @@ data/state.db
 data/user_profile.yaml
 data/sources.yaml
 data/kb_agent.log
+# Дампы/бэкапы .env с секретами (не коммитить, ключи отзывать)
+.env.save
+.env.*.save
+*.env.backup
 
 # Working files (not for publication)
 _queue.jsonl

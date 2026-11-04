@@ -7,9 +7,67 @@ pending_changes (Этап 4), sources (Этап 4).
 
 from __future__ import annotations
 
+import re
 import sqlite3
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional, Union
+
+from kb_agent.utils.logger import setup_logger
+
+logger = setup_logger("kb_agent.storage.state")
+
+# Токен для FTS5: буквы/цифры, допускается дефис внутри слова.
+# За счёт этого кавычки, звёздочки и прочие операторы FTS5 в запрос не попадают.
+_WORD_RE = re.compile(r"[^\W_]+(?:-[^\W_]+)*", re.UNICODE)
+
+
+def _migrate_feedback_allow_zero(conn: sqlite3.Connection) -> None:
+    """Разрешает score = 0 (сообщения обратной связи без оценки).
+
+    Миграция идемпотентна: если таблица уже допускает 0, ничего не делает.
+    Выполняется в одной транзакции, поэтому падение не оставляет БД
+    в состоянии «feedback удалён, feedback_v2 не переименован».
+    """
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'feedback'"
+    ).fetchone()
+    if row and "BETWEEN 0 AND 5" in (row["sql"] or ""):
+        return
+
+    conn.commit()
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS feedback_v2 (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                note_id TEXT NOT NULL,
+                score INTEGER NOT NULL CHECK (score BETWEEN 0 AND 5),
+                comment TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+            """
+        )
+        has_old_table = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'feedback'"
+        ).fetchone()
+        if has_old_table:
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO feedback_v2 (id, note_id, score, comment, created_at)
+                SELECT id, note_id, score, comment, created_at FROM feedback
+                """
+            )
+            conn.execute("DROP TABLE feedback")
+        conn.execute("ALTER TABLE feedback_v2 RENAME TO feedback")
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    logger.info("Миграция feedback: разрешён score = 0")
+
+
+SchemaStep = Union[str, Callable[[sqlite3.Connection], None]]
 
 _SCHEMA = [
     (
@@ -134,19 +192,7 @@ _SCHEMA = [
     ),
     (
         10,
-        """
-        -- Разрешить score=0 для общих сообщений обратной связи (без оценки)
-        CREATE TABLE IF NOT EXISTS feedback_new (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            note_id TEXT NOT NULL,
-            score INTEGER NOT NULL CHECK (score BETWEEN 0 AND 5),
-            comment TEXT,
-            created_at TEXT NOT NULL DEFAULT (datetime('now'))
-        );
-        INSERT INTO feedback_new SELECT * FROM feedback;
-        DROP TABLE feedback;
-        ALTER TABLE feedback_new RENAME TO feedback;
-        """,
+        _migrate_feedback_allow_zero,
     ),
 ]
 
@@ -190,9 +236,14 @@ class StateManager:
         conn.commit()
         row = conn.execute("SELECT version FROM schema_version ORDER BY version DESC LIMIT 1").fetchone()
         current_version = row["version"] if row else 0
-        for version, sql in _SCHEMA:
+        for version, step in _SCHEMA:
             if version > current_version:
-                conn.executescript(sql)
+                # Шаг может быть SQL-скриптом или функцией-миграцией (для шагов,
+                # которым нужны проверки/транзакции).
+                if callable(step):
+                    step(conn)
+                else:
+                    conn.executescript(step)
                 conn.execute(
                     "INSERT OR REPLACE INTO schema_version (version) VALUES (?)",
                     (version,),
@@ -287,23 +338,49 @@ class StateManager:
 
     def search(self, query: str, limit: int = 10) -> list[dict]:
         conn = self.connect()
-        # Экранируем запрос для FTS5: разбиваем на слова и соединяем через OR
-        # (чтобы найти заметки по любому из слов)
-        words = [w.strip() for w in query.split() if w.strip()]
+        # Ограничиваем размер выдачи: защита от выкачивания всей базы в контекст LLM.
+        try:
+            limit = max(1, min(int(limit), 20))
+        except (TypeError, ValueError):
+            limit = 10
+
+        # Экранируем запрос для FTS5: оставляем только слова, соединяем через OR
+        # (чтобы найти заметки по любому из слов). Операторы FTS5 (", *, -, NEAR)
+        # и прочий синтаксис в запрос не попадают.
+        words = _WORD_RE.findall(query or "")
         if not words:
             return []
-        fts_query = " OR ".join(f'"{w}"' for w in words)
-        rows = conn.execute(
+        fts_query = " OR ".join(f'"{word}"' for word in words)
+        try:
+            rows = conn.execute(
+                """
+                SELECT note_id, title, tags, topic, content
+                FROM notes_fts
+                WHERE notes_fts MATCH ?
+                ORDER BY rank
+                LIMIT ?
+                """,
+                (fts_query, limit),
+            ).fetchall()
+        except sqlite3.OperationalError as exc:
+            # Некорректный с точки зрения FTS5 запрос не должен ронять CLI/MCP.
+            logger.warning("FTS-запрос отклонён (%s): %s", fts_query, exc)
+            return []
+        return [dict(row) for row in rows]
+
+    def get_note(self, note_id: str) -> Optional[dict]:
+        """Возвращает заметку из FTS5-индекса по её ID (или None)."""
+        conn = self.connect()
+        row = conn.execute(
             """
             SELECT note_id, title, tags, topic, content
             FROM notes_fts
-            WHERE notes_fts MATCH ?
-            ORDER BY rank
-            LIMIT ?
+            WHERE note_id = ?
+            LIMIT 1
             """,
-            (fts_query, limit),
-        ).fetchall()
-        return [dict(row) for row in rows]
+            (note_id,),
+        ).fetchone()
+        return dict(row) if row else None
 
     def add_link(self, source_note_id: str, target_note_id: str, link_type: str) -> None:
         conn = self.connect()
@@ -359,6 +436,35 @@ class StateManager:
             (prompt_name,),
         ).fetchone()
         return dict(row) if row else None
+
+    def seed_prompt_from_file(self, prompt_name: str, prompt_path: Path) -> Optional[dict]:
+        """Заводит версию 1 промпта из файла, если активной версии ещё нет.
+
+        Нужен, чтобы `prompt_history` не оставалась пустой: без этого
+        `self-improve rollback` и MCP `kb_revert_prompt` нечего откатывать.
+        """
+        if self.get_active_prompt(prompt_name):
+            return None
+        prompt_path = Path(prompt_path)
+        if not prompt_path.exists():
+            logger.warning("Файл промпта не найден: %s", prompt_path)
+            return None
+        try:
+            content = prompt_path.read_text(encoding="utf-8").strip()
+        except OSError as exc:
+            logger.warning("Не удалось прочитать промпт %s: %s", prompt_path, exc)
+            return None
+        if not content:
+            return None
+        self.save_prompt(
+            prompt_name=prompt_name,
+            version=1,
+            content=content,
+            is_active=True,
+            approved_by="system",
+        )
+        logger.info("Промпт %s импортирован в prompt_history как версия 1", prompt_name)
+        return self.get_active_prompt(prompt_name)
 
     def is_processed(self, key: str) -> bool:
         conn = self.connect()

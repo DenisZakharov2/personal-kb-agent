@@ -13,7 +13,7 @@ from typing import Optional
 
 import yaml
 
-from kb_agent.config import load_config, DEFAULT_SOURCES_PATH, PROJECT_ROOT
+from kb_agent.config import AppConfig, PROJECT_ROOT, load_config
 from kb_agent.sources.base import SourceConfig
 from kb_agent.utils.logger import setup_logger
 
@@ -137,22 +137,69 @@ class SourceRegistry:
         self.save()
 
 
-def ensure_sources_file(sources_path: Optional[Path] = None) -> Path:
-    """Создаёт data/sources.yaml из примера, если файла нет."""
-    if sources_path is None:
-        config = load_config()
-        sources_path = config.sources_path
+def _sources_from_config(config: AppConfig) -> list[SourceConfig]:
+    """Строит источники из переменных окружения KB_TELEGRAM_CHANNELS / KB_YOUTUBE_CHANNELS."""
+    result: list[SourceConfig] = []
+
+    for name in (config.telegram_channels or "").split(","):
+        name = name.strip()
+        if not name:
+            continue
+        channel = name if name.startswith("http") else f"https://t.me/s/{name}"
+        slug = channel.rstrip("/").split("/")[-1].replace("@", "")
+        result.append(
+            SourceConfig(id=f"tg_{slug}", type="telegram", url=channel, enabled=True)
+        )
+
+    for url in (config.youtube_channels or "").split(","):
+        url = url.strip()
+        if not url:
+            continue
+        slug = url.rstrip("/").split("/")[-1].replace("@", "")
+        result.append(SourceConfig(id=f"yt_{slug}", type="youtube", url=url, enabled=True))
+
+    return result
+
+
+def ensure_sources_file(
+    sources_path: Optional[Path] = None,
+    config: Optional[AppConfig] = None,
+) -> Path:
+    """Создаёт sources.yaml, если файла нет.
+
+    Приоритет: значения из окружения (`KB_TELEGRAM_CHANNELS`, `KB_YOUTUBE_CHANNELS`)
+    → `config/sources.example.yaml` → пустой реестр.
+    """
+    if config is None or sources_path is None:
+        loaded = load_config()
+        config = config or loaded
+        sources_path = sources_path or config.sources_path
+
     sources_path = Path(sources_path)
     if sources_path.exists():
         return sources_path
 
+    sources_path.parent.mkdir(parents=True, exist_ok=True)
+
+    env_sources = _sources_from_config(config)
+    if env_sources:
+        data = {"version": 1, "sources": [cfg.to_dict() for cfg in env_sources]}
+        sources_path.write_text(
+            yaml.dump(data, allow_unicode=True, sort_keys=False),
+            encoding="utf-8",
+        )
+        logger.info(
+            "Создан %s из переменных окружения (%s источников)",
+            sources_path,
+            len(env_sources),
+        )
+        return sources_path
+
     example = PROJECT_ROOT / "config" / "sources.example.yaml"
     if example.exists():
-        sources_path.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(example, sources_path)
         logger.info("Создан %s из %s", sources_path, example)
     else:
-        sources_path.parent.mkdir(parents=True, exist_ok=True)
         sources_path.write_text("version: 1\nsources: []\n", encoding="utf-8")
         logger.info("Создан пустой %s", sources_path)
     return sources_path

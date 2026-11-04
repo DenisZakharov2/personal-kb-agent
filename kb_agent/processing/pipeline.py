@@ -10,14 +10,15 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
 
 import yaml
 
 from kb_agent.config import AppConfig
+from kb_agent.core.prompts import ensure_prompt_seeded
 from kb_agent.core.relevance import RelevanceGate
 from kb_agent.processing.llm_client import LLMClient
-from kb_agent.processing.kb_writer import KBWriter
-from kb_agent.sources.manager import SourceManager, run_collection
+from kb_agent.sources.manager import run_collection
 from kb_agent.storage.catalog import CatalogGenerator
 from kb_agent.storage.state import StateManager
 from kb_agent.storage.vault import VaultManager
@@ -33,7 +34,6 @@ class Pipeline:
         self.config = config
         self.state = StateManager(config.db_path)
         self.llm = LLMClient(config)
-        self.writer = KBWriter(config)
         self.vault = VaultManager(config)
         self.catalog = CatalogGenerator(self.vault)
         self.relevance: Optional[RelevanceGate] = None
@@ -57,6 +57,9 @@ class Pipeline:
         """
         logger.info("=== Запуск конвейера наполнения ===")
         self.state.init_db()
+        # Импортируем базовую версию системного промпта в prompt_history,
+        # чтобы работали откат промпта и self-improve.
+        ensure_prompt_seeded(self.config, self.state)
 
         # Загружаем профиль и настраиваем Relevance Gate
         profile = self._load_profile()
@@ -134,17 +137,18 @@ class Pipeline:
                     )
                     continue
 
-                # Генерируем note_id
-                note_id = f"{item['received_at'][:13]}_{uuid.uuid4().hex[:8]}"
+                # Генерируем note_id (без пробелов: пригоден для URL и шелла)
+                note_id = self._make_note_id(item["received_at"])
 
                 # Определяем тип источника
                 source_type = item["source_id"].split("_")[0]  # tg или yt
 
-                # Суммаризация через LLM
+                # Суммаризация через LLM (темы профиля передаются в промпт)
                 llm_response = self.llm.summarize(
                     raw_text=item["raw_text"] or "",
                     source_type=source_type,
                     source_name=item["source_id"],
+                    topics=list(self.relevance.topics) if self.relevance else None,
                 )
 
                 if llm_response.error or not llm_response.text.strip():
@@ -155,9 +159,11 @@ class Pipeline:
                     failed += 1
                     continue
 
-                # Извлекаем теги из ответа LLM (простой парсинг)
+                # Извлекаем теги и тему из ответа LLM
                 tags = self._extract_tags(llm_response.text)
-                topic = self._guess_topic(llm_response.text)
+                topic = self._extract_topic(llm_response.text) or self._guess_topic(
+                    llm_response.text
+                )
 
                 # Пишем заметку в vault (тематические папки)
                 self.vault.write_note(
@@ -182,6 +188,9 @@ class Pipeline:
                     topic=topic,
                     content=llm_response.text,
                 )
+
+                # Связываем с уже накопленными заметками по общим тегам
+                self._link_related_notes(note_id, tags)
 
                 self.state.mark_processed(queue_id)
                 created += 1
@@ -239,15 +248,66 @@ class Pipeline:
         return digest_path
 
     def _extract_tags(self, text: str) -> list[str]:
-        """Извлекает теги из ответа LLM (по строке 'Теги: ...')."""
-        tags: list[str] = []
+        """Извлекает теги из ответа LLM (строка вида «6. Теги: a, b»)."""
         for line in text.splitlines():
-            if line.strip().lower().startswith("теги"):
-                parts = line.split(":", 1)
-                if len(parts) == 2:
-                    tags = [t.strip() for t in parts[1].split(",") if t.strip()]
-                    break
-        return tags[:10]
+            # Снимаем нумерацию/маркеры списка: «6. », «- », «* » и т. п.
+            candidate = line.strip().lstrip("0123456789.)-—*# ").strip()
+            if not candidate.lower().startswith(("теги", "tags")):
+                continue
+            _, _, value = candidate.partition(":")
+            cleaned = [
+                tag.strip(" .`*_#")
+                for tag in value.replace(";", ",").split(",")
+                if tag.strip(" .`*_#")
+            ]
+            return cleaned[:10]
+        return []
+
+    @staticmethod
+    def _extract_topic(text: str) -> str:
+        """Извлекает тему заметки из ответа LLM (строка «Тема: ...»)."""
+        for line in text.splitlines():
+            candidate = line.strip().lstrip("0123456789.)-—*# ").strip()
+            if not candidate.lower().startswith(("тема", "topic")):
+                continue
+            _, _, value = candidate.partition(":")
+            value = value.strip().strip("`*_ ").strip()
+            if value:
+                return value[:80]
+        return ""
+
+    @staticmethod
+    def _make_note_id(received_at: str) -> str:
+        """note_id без пробелов: 2026-11-04T10_ab12cd34."""
+        stamp = (received_at or "").strip()
+        try:
+            stamp = datetime.fromisoformat(stamp).strftime("%Y-%m-%dT%H")
+        except ValueError:
+            if stamp:
+                stamp = stamp[:13].replace(" ", "T").replace(":", "")
+            else:
+                stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H")
+        return f"{stamp}_{uuid.uuid4().hex[:8]}"
+
+    def _link_related_notes(self, note_id: str, tags: list[str]) -> None:
+        """Создаёт связи `references` с заметками по общим тегам (топ-3)."""
+        my_tags = {tag.strip().lower() for tag in tags if tag.strip()}
+        if not my_tags:
+            return
+        conn = self.state.connect()
+        rows = conn.execute(
+            "SELECT note_id, tags FROM notes_fts WHERE note_id != ?", (note_id,)
+        ).fetchall()
+        scored: list[tuple[int, str]] = []
+        for row in rows:
+            other_tags = {
+                tag.strip().lower() for tag in (row["tags"] or "").split(",") if tag.strip()
+            }
+            common = my_tags & other_tags
+            if common:
+                scored.append((len(common), row["note_id"]))
+        for _, other_note_id in sorted(scored, reverse=True)[:3]:
+            self.state.add_link(note_id, other_note_id, "references")
 
     def _guess_topic(self, text: str) -> str:
         """Определяет тематику заметки (заглушка, будет уточняться через профиль)."""

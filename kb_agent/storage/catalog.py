@@ -49,7 +49,13 @@ class CatalogGenerator:
         if output_path is None:
             output_path = vault_path / "Каталог.md"
 
-        notes = self.vault.list_notes()
+        # Служебные файлы не являются заметками и не должны попадать в каталог
+        generated_files = {"Каталог.md", "Дайджест.md"}
+        notes = [
+            note_path
+            for note_path in self.vault.list_notes()
+            if note_path.name not in generated_files
+        ]
 
         # Группируем по темам
         by_topic: dict[str, list[tuple[str, str, str]]] = {}  # topic -> [(date, title, rel_path)]

@@ -12,17 +12,11 @@ from kb_agent.config import load_config
 from kb_agent.storage.pending import PendingManager
 from kb_agent.storage.state import StateManager
 from kb_agent.utils.logger import setup_logger
+from kb_agent.cli.output import output_json as _output_json
 
-app = typer.Typer(help="Просмотр pending-запросов write-операций (Этап 4)")
 logger = setup_logger("kb_agent.cli.pending")
 
 
-def _output_json(data: dict) -> None:
-    """Выводит данные в формате JSON."""
-    typer.echo(json.dumps(data, ensure_ascii=False, indent=2))
-
-
-@app.command(name="pending")
 def pending_command(
     status: str = typer.Option(
         "pending",

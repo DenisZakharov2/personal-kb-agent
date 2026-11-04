@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
 from kb_agent.storage.state import StateManager
 from kb_agent.utils.logger import setup_logger

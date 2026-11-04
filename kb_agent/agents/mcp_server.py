@@ -9,8 +9,6 @@ Write-часть (требует подтверждения человеком):
 from __future__ import annotations
 
 import asyncio
-import json
-import sys
 from typing import Any
 
 from mcp.server import Server
@@ -24,7 +22,6 @@ from mcp.types import (
 from kb_agent.config import load_config
 from kb_agent.core.search import SearchEngine
 from kb_agent.core.insights import InsightsEngine
-from kb_agent.core.update import KnowledgeUpdater
 from kb_agent.processing.llm_client import LLMClient
 from kb_agent.storage.pending import PendingManager
 from kb_agent.storage.state import StateManager
@@ -211,19 +208,16 @@ async def handle_call_tool(name: str, arguments: dict[str, Any]) -> list[TextCon
                     lines.append(
                         f"- **{r.title}** (ID: {r.note_id}, теги: {r.tags}, тема: {r.topic})"
                     )
+                    snippet = " ".join((r.content or "").split())[:300]
+                    if snippet:
+                        lines.append(f"  > {snippet}")
                 result_text = "\n".join(lines)
 
             return [TextContent(type="text", text=result_text)]
 
         elif name == "kb_get_note":
             note_id = arguments.get("note_id", "")
-            # Ищем заметку в FTS5 индексе
-            rows = state.search("", limit=100)  # получаем все, ищем по ID
-            note = None
-            for row in rows:
-                if row["note_id"] == note_id:
-                    note = row
-                    break
+            note = state.get_note(note_id)
 
             if note is None:
                 return [TextContent(type="text", text=f"Заметка с ID {note_id} не найдена.")]

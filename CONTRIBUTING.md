@@ -79,15 +79,18 @@ personal-kb-agent/
 │   │   │   ├── process.py       # process run/digest/status
 │   │   │   ├── self_improve.py  # self-improve rollback
 │   │   │   └── sources.py       # sources add/remove/enable/disable/list
+│   │   ├── output.py            # shared JSON output helper
 │   │   └── main.py              # CLI entry point
 │   ├── core/                # core logic
 │   │   ├── interview.py         # InterviewManager
+│   │   ├── insights.py          # InsightsEngine (themes, gaps, links)
+│   │   ├── prompts.py           # versioned system prompts (prompt_history)
 │   │   ├── relevance.py         # Relevance Gate
+│   │   ├── search.py            # FTS5 search + LLM answer
 │   │   ├── self_improvement.py  # SelfImprovementEngine
 │   │   └── update.py            # KnowledgeUpdater
 │   ├── processing/            # processing pipeline
-│   │   ├── llm_client.py        # LLM client (OpenAI-compatible)
-│   │   ├── kb_writer.py         # KB note writer
+│   │   ├── llm_client.py        # LLM client (OpenAI-compatible, retries)
 │   │   └── pipeline.py          # Pipeline (collect → relevance → LLM → vault)
 │   ├── sources/               # data sources
 │   │   ├── base.py              # BaseSource abstract class
@@ -114,7 +117,9 @@ personal-kb-agent/
 │   ├── user_profile.example.yaml  # profile template
 │   └── prompts/
 │       └── agent_prompt.md    # system prompt
-├── scripts/                   # legacy scripts (raw data providers)
+├── scripts/                   # служебные скрипты
+│   ├── prepare_stage4_write.sh # проверка окружения (Этап 4)
+│   └── legacy/                 # сборщики первого поколения (_queue.jsonl), не используются приложением
 ├── tests/                     # tests (to be added)
 ├── docs/                      # documentation
 └── SKILL.md                   # MCP skill for AI agents

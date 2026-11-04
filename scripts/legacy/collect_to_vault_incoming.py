@@ -5,11 +5,9 @@
 Сохраняет новые посты в папку "Входящие" для последующей обработки агентом.
 """
 
-import os
 import re
 import requests
 from bs4 import BeautifulSoup
-from datetime import datetime
 from pathlib import Path
 
 # =============== ПУТИ ===============

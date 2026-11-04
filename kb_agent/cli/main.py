@@ -1,16 +1,19 @@
-"""Точка входа CLI для kb-agent (Этапы 1-3).
+"""Точка входа CLI для kb-agent (Этапы 1-5).
 
 Команды:
-  kb-agent --version              — версия
-  kb-agent interview init         — вводное интервью
-  kb-agent interview status       — статус профиля
-  kb-agent interview import-core  — импорт ядра материалов
-  kb-agent process run            — запуск конвейера наполнения
-  kb-agent process status         — статус базы данных
-  kb-agent ask "<вопрос>"           — ответ со ссылками на заметки
-  kb-agent search "<запрос>"        — поиск заметок (список результатов)
-  kb-agent insights                 — инсайты и связи между заметками
-  kb-agent update check             — поиск дублей и предложение слияния
+  kb-agent --version               — версия
+  kb-agent interview init|status|import-core|periodic — профиль и импорт ядра
+  kb-agent process run|digest|status                 — конвейер наполнения
+  kb-agent ask "<вопрос>"          — ответ со ссылками на заметки
+  kb-agent search "<запрос>"       — поиск заметок (список)
+  kb-agent insights                — инсайты и связи между заметками
+  kb-agent update check            — поиск дублей
+  kb-agent sources list|add|remove|enable|disable     — управление источниками
+  kb-agent pending                 — список pending-запросов write-операций
+  kb-agent confirm <change_id>     — подтвердить и применить pending-запрос
+  kb-agent feedback rate|tell|metrics|list           — обратная связь
+  kb-agent self-improve [rollback] — метрики и откат промптов
+  kb-agent mcp-serve               — MCP-сервер для внешних агентов
 """
 
 from __future__ import annotations
@@ -29,7 +32,7 @@ from kb_agent.cli.commands.ask import (
     ask_command,
     search_command,
     insights_command,
-    update_app as update_app,
+    update_app,
 )
 from kb_agent.agents.mcp_server import main as mcp_main
 
@@ -97,6 +100,7 @@ def mcp_serve() -> None:
     import asyncio
 
     asyncio.run(mcp_main())
+
 
 if __name__ == "__main__":
     app()

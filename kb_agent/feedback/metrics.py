@@ -65,10 +65,19 @@ class FeedbackMetricsCollector:
             for s in scores:
                 score_distribution[s] = score_distribution.get(s, 0) + 1
 
+        recent_rows = conn.execute(
+            """
+            SELECT note_id, score, comment, created_at
+            FROM feedback
+            ORDER BY created_at DESC, id DESC
+            LIMIT 10
+            """
+        ).fetchall()
+
         return FeedbackMetrics(
             total_ratings=total_ratings,
             average_score=average_score,
             score_distribution=score_distribution,
             total_messages=len(messages),
-            recent_feedback=ratings[:10] + messages[:10],
+            recent_feedback=[dict(row) for row in recent_rows],
         )

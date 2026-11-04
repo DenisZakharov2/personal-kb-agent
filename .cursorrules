@@ -22,12 +22,14 @@ kb-agent mcp-serve
 - `kb-agent process run` — запуск конвейера наполнения
 
 ## Расположение файлов
-- Конфиг: `config/sources.yaml`, `config/user_profile.yaml`
+- Конфиг источников: `data/sources.yaml` (шаблон — `config/sources.example.yaml`)
+- Профиль: `data/user_profile.yaml` (шаблон — `config/user_profile.example.yaml`)
 - База данных: `data/state.db` (SQLite)
-- Vault: `/home/anony/Documents/Личное/База знаний/`
-- Промпт: `config/prompts/agent_prompt.md`
+- Vault: путь из `KB_VAULT_PATH` (по умолчанию `/home/anony/Documents/Личное/База знаний/`)
+- Системный промпт: `config/prompts/agent_prompt.md`
 
 ## Ограничения
-- MCP-сервер read-only в первой версии
+- Read-only инструменты MCP (`kb_search`, `kb_get_note`, `kb_get_insights`) работают сразу
+- Write-инструменты MCP создают pending-запрос: применяются только после `kb_confirm_change` / `kb-agent confirm <id>`
 - Изменение источников требует подтверждения человека
 - Не используйте веб-интерфейс, его нет
