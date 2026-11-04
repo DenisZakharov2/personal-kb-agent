@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "kb-agent": {
+      "command": "kb-agent",
+      "args": ["mcp-serve"],
+      "env": {}
+    }
+  }
+}
