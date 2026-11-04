@@ -10,9 +10,9 @@ import os
 from pathlib import Path
 from typing import Optional
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-# Корень проекта: две уровни выше от этого файла (kb_agent/config.py -> kb_agent/ -> корень)
+# Корень проекта: два уровня выше от этого файла (kb_agent/config.py -> kb_agent/ -> корень)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 # Пути по умолчанию
@@ -69,28 +69,42 @@ class AppConfig(BaseModel):
     openai_model: str = Field(default="gpt-4o-mini", description="Модель LLM")
     openai_temperature: float = Field(default=0.3, description="Температура модели")
     openai_max_tokens: int = Field(default=2000, description="Максимум токенов в ответе")
+    llm_timeout: float = Field(default=60.0, description="Таймаут запроса к LLM, секунд")
+    llm_max_retries: int = Field(
+        default=2,
+        description="Число повторов запроса при 429/5xx и сетевых ошибках",
+    )
 
     # Параметры сбора (из .env / переменных окружения)
     telegram_channels: str = Field(
-        default="rubiconzone,paragonzone,ragnarokzone",
-        description="Каналы Telegram через запятую",
+        default="",
+        description="Каналы Telegram через запятую (используются при создании sources.yaml)",
     )
     youtube_channels: str = Field(
-        default="https://www.youtube.com/@amorev,https://www.youtube.com/@rubiconzone,https://www.youtube.com/@paragonzone,https://www.youtube.com/@javaswag,https://www.youtube.com/@AIAutomation-n8n,https://www.youtube.com/@yefomov_AI,https://www.youtube.com/@ProdAdvice,https://www.youtube.com/@VolchenkoAI,https://www.youtube.com/@nagorra,https://www.youtube.com/@vladimir_kkkkkk",
-        description="Каналы YouTube через запятую",
+        default="",
+        description="Каналы YouTube через запятую (используются при создании sources.yaml)",
     )
     yt_months: int = Field(default=16, description="Глубина бэклога YouTube в месяцах")
     yt_sub_langs: str = Field(default="ru,en", description="Языки субтитров через запятую")
     limit: int = Field(default=10, description="Постов/видео с каждого источника за запуск")
 
-    @validator("vault_path", "data_dir", "db_path", "sources_path", "profile_path", "log_path", "prompts_dir")
+    @field_validator(
+        "vault_path",
+        "data_dir",
+        "db_path",
+        "sources_path",
+        "profile_path",
+        "log_path",
+        "prompts_dir",
+        mode="after",
+    )
+    @classmethod
     def _resolve_paths(cls, value: Path) -> Path:
         if not value.is_absolute():
             return PROJECT_ROOT / value
         return value
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
 def load_config(env_file: Optional[str] = None) -> AppConfig:
@@ -124,6 +138,8 @@ def load_config(env_file: Optional[str] = None) -> AppConfig:
         "KB_OPENAI_MODEL": "openai_model",
         "KB_OPENAI_TEMPERATURE": "openai_temperature",
         "KB_OPENAI_MAX_TOKENS": "openai_max_tokens",
+        "KB_LLM_TIMEOUT": "llm_timeout",
+        "KB_LLM_MAX_RETRIES": "llm_max_retries",
         "KB_TELEGRAM_CHANNELS": "telegram_channels",
         "KB_YOUTUBE_CHANNELS": "youtube_channels",
         "KB_YT_MONTHS": "yt_months",

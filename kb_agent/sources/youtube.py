@@ -1,6 +1,6 @@
 """Сборщик YouTube: метаданные и автоматические субтитры (Этап 2).
 
-Логика перенесена из scripts/collect_youtube.py, но запись теперь ведётся
+Логика перенесена из scripts/legacy/collect_youtube.py, но запись теперь ведётся
 в SQLite-таблицу raw_queue вместо файла _queue.jsonl.
 """
 
@@ -8,8 +8,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
-import re
 import subprocess
 import tempfile
 import time
@@ -17,7 +15,6 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
-from kb_agent.config import AppConfig
 from kb_agent.storage.state import StateManager
 from kb_agent.utils.logger import setup_logger
 
@@ -142,33 +139,6 @@ def _fetch_transcript(video_id: str, video_url: str, langs: list[str]) -> Option
         else:
             logger.warning("  %s | субтитры пустые (%s)", vid, lang)
     return None
-
-
-def collect_youtube(config: AppConfig, state: StateManager) -> dict:
-    """Собирает видео из всех YouTube-каналов и пишет в raw_queue.
-
-    Для каждого видео также скачивает автоматические субтитры (ru → en).
-    Возвращает статистику.
-    """
-    channels = [c.strip() for c in config.youtube_channels.split(",") if c.strip()]
-    langs = [l.strip() for l in config.yt_sub_langs.split(",") if l.strip()] or [DEFAULT_SUB_LANGS]
-
-    total_new = 0
-    total_skipped = 0
-    total_with_subs = 0
-
-    for channel_url in channels:
-        stats = _collect_one_channel(state, channel_url, langs, config.yt_months, config.limit)
-        total_new += stats["new"]
-        total_skipped += stats["skipped"]
-        total_with_subs += stats["with_subtitles"]
-
-    return {
-        "source": "youtube",
-        "new": total_new,
-        "skipped": total_skipped,
-        "with_subtitles": total_with_subs,
-    }
 
 
 def collect_youtube_source(

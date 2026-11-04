@@ -9,22 +9,15 @@ kb-agent sources disable <source_id>  — выключить источник (p
 
 from __future__ import annotations
 
-import json
 import typer
 
 from kb_agent.config import load_config
-from kb_agent.sources.manager import SourceManager
 from kb_agent.sources.registry import SourceConfig, SourceRegistry
-from kb_agent.storage.state import StateManager
 from kb_agent.utils.logger import setup_logger
+from kb_agent.cli.output import output_json as _output_json
 
 app = typer.Typer(help="Управление источниками данных (Этап 4/5)")
 logger = setup_logger("kb_agent.cli.sources")
-
-
-def _output_json(data: dict) -> None:
-    """Выводит данные в формате JSON."""
-    typer.echo(json.dumps(data, ensure_ascii=False, indent=2))
 
 
 @app.command("list")

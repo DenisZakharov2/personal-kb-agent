@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from kb_agent.config import AppConfig
+from kb_agent.core.prompts import get_active_system_prompt
 from kb_agent.processing.llm_client import LLMClient
 from kb_agent.storage.state import StateManager
 from kb_agent.utils.logger import setup_logger
@@ -83,14 +84,17 @@ class SearchEngine:
 
         context = "\n\n".join(context_parts)
 
-        # LLM-ответ на основе найденных заметок
-        system_prompt = (
+        # LLM-ответ на основе найденных заметок.
+        # Приоритет у активной версии промпта из prompt_history (её можно
+        # редактировать и откатывать), иначе используется встроенный промпт.
+        default_system_prompt = (
             "Вы — ассистент базы знаний. Отвечайте на вопрос пользователя, "
             "используя ТОЛЬКО предоставленные ниже заметки. Отвечайте на русском языке. "
             "Обязательно ссылайтесь на конкретные заметки (указывайте их ID и названия). "
             "Если информации в заметках недостаточно для ответа — честно скажите: "
             "'В базе недостаточно данных'. Не придумывайте фактов."
         )
+        system_prompt = get_active_system_prompt(self.state) or default_system_prompt
         user_prompt = (
             f"Вопрос пользователя: {query}\n\n"
             f"Найденные заметки:\n{context}\n\n"
@@ -116,12 +120,8 @@ class SearchEngine:
         return response
 
 
-def ask_question(config: AppConfig, state: StateManager, question: str) -> str:
-    """Задаёт вопрос базе знаний и возвращает ответ с ссылками."""
-    llm = LLMClient(config)
-    engine = SearchEngine(config, state, llm)
-    response = engine.search(question)
-
+def format_search_response(question: str, response: SearchResponse) -> str:
+    """Форматирует результат поиска в текст для CLI (без повторного вызова LLM)."""
     lines: list[str] = []
     lines.append(f"## Вопрос: {question}")
     lines.append("")
@@ -136,3 +136,11 @@ def ask_question(config: AppConfig, state: StateManager, question: str) -> str:
         lines.append("> В базе недостаточно данных для ответа на этот вопрос.")
 
     return "\n".join(lines)
+
+
+def ask_question(config: AppConfig, state: StateManager, question: str) -> str:
+    """Задаёт вопрос базе знаний и возвращает ответ с ссылками."""
+    llm = LLMClient(config)
+    engine = SearchEngine(config, state, llm)
+    response = engine.search(question)
+    return format_search_response(question, response)

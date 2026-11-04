@@ -8,7 +8,7 @@
 в _queue.jsonl для последующего анализа Hermes Agent (этап 2).
 
 Переменные окружения:
-    KB_TELEGRAM_CHANNELS  — каналы через запятую (по умолчанию из channels.json)
+    KB_TELEGRAM_CHANNELS  — каналы через запятую (по умолчанию — встроенный список)
     KB_LIMIT              — постов с каждого канала за запуск (по умолчанию 10)
     KB_VAULT_PATH         — путь к Obsidian vault (для каталога)
     KB_LOG_PATH           — путь к лог-файлу (опционально)
@@ -23,7 +23,6 @@ import re
 import sys
 import requests
 from bs4 import BeautifulSoup
-from datetime import datetime
 from pathlib import Path
 
 DEFAULT_CHANNELS = ["ragnarokzone", "paragonzone", "rubiconzone"]

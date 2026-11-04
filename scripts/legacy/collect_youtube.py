@@ -13,7 +13,8 @@ YouTube -> KB collector (двухэтапный сбор с транскрипц
 с YAML frontmatter и секциями: Суть, Ключевые идеи, Инструменты и ресурсы, Практические выводы.
 
 Переменные окружения:
-    KB_YT_CHANNEL_URL  — URL канала (по умолчанию из channels.json)
+    KB_YT_CHANNEL_URL  — URL канала (приоритет)
+    KB_YOUTUBE_CHANNELS — список URL каналов через запятую (берётся первый)
     KB_YT_MONTHS       — глубина бэклога в месяцах (по умолчанию 16)
     KB_YT_SUB_LANGS    — языки субтитров через запятую (по умолчанию ru,en)
     KB_YT_LIMIT        — макс. видео за запуск transcripts (0 = все)
@@ -24,7 +25,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import re
 import subprocess
 import sys
 import tempfile
@@ -37,12 +37,23 @@ DEFAULT_MONTHS = 16
 DEFAULT_SUB_LANGS = "ru,en"
 
 
+def default_channel_url() -> str:
+    """URL канала: KB_YT_CHANNEL_URL → первый из KB_YOUTUBE_CHANNELS → значение по умолчанию."""
+    single = os.getenv("KB_YT_CHANNEL_URL", "").strip()
+    if single:
+        return single
+    multiple = os.getenv("KB_YOUTUBE_CHANNELS", "").strip()
+    if multiple:
+        return multiple.split(",")[0].strip()
+    return DEFAULT_CHANNEL_URL
+
+
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="YouTube -> KB collector (stage 1)")
     sub = p.add_subparsers(dest="command", required=True)
 
     c = sub.add_parser("collect", help="собрать метаданные в очередь")
-    c.add_argument("--channel-url", default=os.getenv("KB_YT_CHANNEL_URL", DEFAULT_CHANNEL_URL))
+    c.add_argument("--channel-url", default=default_channel_url())
     c.add_argument("--months", type=int, default=int(os.getenv("KB_YT_MONTHS", str(DEFAULT_MONTHS))))
 
     t = sub.add_parser("transcripts", help="скачать субтитры для видео в очереди")

@@ -1,132 +1,91 @@
 # Рабочий процесс (Workflow)
 
-## Двухэтапный сбор
+## Быстрый цикл
 
-| Этап | Кто выполняет | Что делает | Инструмент |
-|------|---------------|------------|------------|
-| 1 | Скрипт (крон) | Сбор сырых данных в очередь | `collect_telegram.py`, `collect_youtube.py` |
-| 2 | Hermes Agent | Анализ через LLM, запись заметок KB | Чат Hermes / ваш LLM |
+```
+pip install -e .                 # установка пакета и команды kb-agent
+kb-agent interview init          # профиль (цели, темы, источники)
+kb-agent sources add telegram https://t.me/s/<канал>
+kb-agent process run             # сбор → relevance → LLM → vault → каталог/дайджест
+kb-agent ask "<вопрос>"           # ответ со ссылками на заметки
+```
 
-## Пошаговая инструкция
+## Пошагово
 
-### Шаг 1. Настройка окружения
+### 1. Настройка окружения
 
 ```bash
 cp .env.example .env
-# Отредактируйте .env под свои пути
+# В .env: KB_VAULT_PATH, KB_OPENAI_API_KEY, KB_TELEGRAM_CHANNELS, KB_YOUTUBE_CHANNELS
 ```
 
-### Шаг 2. Запуск сбора (автоматически по крону или вручную)
+### 2. Профиль пользователя
 
 ```bash
-# Telegram
-python3 scripts/collect_telegram.py
-
-# YouTube — метаданные в очередь
-python3 scripts/collect_youtube.py collect
-
-# YouTube — субтитры для видео в очереди
-python3 scripts/collect_youtube.py transcripts
+kb-agent interview init      # создаст data/user_profile.yaml
+kb-agent interview status    # статус профиля и БД
+kb-agent interview periodic  # ежемесячное обновление целей и тем
 ```
 
-### Шаг 3. Просмотр очереди
+### 3. Источники
 
 ```bash
-python3 scripts/collect_youtube.py list-queue
-# или для Telegram — смотрите _queue.jsonl напрямую
+kb-agent sources list
+kb-agent sources add telegram https://t.me/s/ragnarokzone
+kb-agent sources add youtube https://youtube.com/@channel
+kb-agent sources enable tg_ragnarokzone
+kb-agent sources disable yt_channel
+kb-agent sources remove tg_ragnarokzone
 ```
 
-### Шаг 4. Анализ Hermes Agent
+Файл `data/sources.yaml` создаётся автоматически при первом запуске сбора.
+Изменения из MCP-инструментов проходят через `pending` → `kb-agent confirm <id>`.
 
-Для каждой записи в очереди:
-1. Прочтите текст поста / транскрипцию.
-2. Напишите структурированную заметку KB со следующими секциями:
-   - `# Заголовок`
-   - `## Суть`
-   - `## Ключевые идеи`
-   - `## Инструменты и ресурсы`
-   - `## Практические выводы`
-   - `**Дата:**`
-   - `**Канал:**`
-   - `**Источник:**`
-   - `#теги`
-3. Добавьте YAML frontmatter (пример в `docs/catalog.md`).
-
-### Шаг 5. Пометка обработанной записи
+### 4. Наполнение базы знаний
 
 ```bash
-python3 scripts/collect_youtube.py done <VIDEO_ID>
-# Для Telegram — аналогично, пометьте в _done.txt
+kb-agent process run       # полный цикл
+kb-agent process digest    # тот же цикл + Markdown-дайджест в stdout
+kb-agent process status    # статистика очереди и таблиц
 ```
 
-### Шаг 6. Обновление каталога
+Что происходит внутри:
+1. **Сбор** — `SourceManager` опрашивает включённые источники, новые материалы попадают в `raw_queue`.
+2. **Relevance Gate** — отсев спама и нерелевантного по `user_profile.yaml`; пропуски помечаются `skipped` с причиной.
+3. **Суммаризация** — LLM строит заметку (суть, идеи, инструменты, выводы, теги, тема).
+4. **Запись** — заметка с YAML frontmatter попадает в тематическую папку vault (`VaultManager`).
+5. **Индексация** — `notes_fts` (FTS5) и связи `note_links` по общим тегам.
+6. **Каталог и дайджест** — `Каталог.md` и `Дайджест.md` пересобираются автоматически.
+
+### 5. Работа с базой
 
 ```bash
-python3 scripts/collect_telegram.py catalog
-# пересобирает Каталог.md из всех существующих заметок
+kb-agent search "автоматизация n8n"   # список совпадений (FTS5, без LLM)
+kb-agent ask "что я накопил про ИИ-агентов?"  # LLM-ответ со ссылками
+kb-agent insights                     # повторяющиеся темы, пробелы, связи
+kb-agent update check                 # поиск возможных дублей
 ```
 
-## Пример итоговой заметки (YouTube)
+### 6. Обратная связь и самоулучшение
 
-```markdown
----
-source: youtube
-channel: vladimir_kkkkkk
-url: https://www.youtube.com/watch?v=XXXXXXX
-thumbnail: 'https://i.ytimg.com/vi/XXXXXXX/maxresdefault.jpg'
-date_saved: 2026-10-22
-duration: 37:03
-tags: [youtube, GPT-6, Astra, тестирование-моделей]
-transcript: _transcripts/XXXXXXX.txt
----
-
-# GPT-6 Astra. Проверка на РЕЛЬНЫХ задачах
-
-## Суть
-...
-
-## Ключевые идеи
-- ...
-
-## Инструменты и ресурсы
-- ...
-
-## Практические выводы
-- ...
-
-**Дата:** 2026-09-10T00:00:00+00:00
-**Канал:** vladimir_kkkkkk
-**Источник:** [https://www.youtube.com/watch?v=XXXXXXX](...)
-
-#видео #youtube #GPT-6 #Astra
+```bash
+kb-agent feedback rate <note_id> 5 --comment "хорошая суммаризация"
+kb-agent feedback tell "нужно больше примеров кода"
+kb-agent feedback metrics
+kb-agent self-improve                       # метрики обратной связи
+kb-agent self-improve rollback agent_prompt 1   # откат промпта к версии
 ```
 
-## Пример итоговой заметки (Telegram)
+### 7. Доступ для внешних агентов
 
-```markdown
-# Агенты OpenAI ослабили контроль за собой
-
-## Суть
-OpenAI опубликовала отчёт о двух случаях...
-
-## Ключевые идеи
-- ...
-
-## Инструменты и ресурсы
-- ...
-
-## Практические выводы
-- ...
-
-**Дата:** 2026-10-21T10:09:58+00:00
-**Канал:** ragnarokzone
-**Источник:** [https://t.me/ragnarokzone/264](...)
-
-#телеграмм #ragnarokzone #OpenAI #безопасность
+```bash
+kb-agent mcp-serve    # MCP-сервер (stdio) для Cursor/Claude Code/Hermes и др.
 ```
 
-## Что НЕ входит в этот репозиторий
+Инструменты: `kb_search`, `kb_get_note`, `kb_get_insights` (read-only) и
+write-инструменты через pending-подтверждение. Подробности — `SKILL.md`.
 
-- Сами заметки KB (они находятся в вашем личном Obsidian vault).
-- `_queue.jsonl`, `_done.txt`, `_transcripts/` — рабочие файлы сбора, не для публикации.
-- Логи cron.
+## Legacy-сборщики
+
+Скрипты первого поколения (`_queue.jsonl`, без SQLite) лежат в `scripts/legacy/`
+и приложением не используются — см. `scripts/legacy/README.md`.

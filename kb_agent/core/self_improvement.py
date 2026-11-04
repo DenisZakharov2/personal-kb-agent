@@ -14,10 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-import yaml
-
 from kb_agent.config import load_config
-from kb_agent.storage.pending import PendingManager
 from kb_agent.storage.state import StateManager
 from kb_agent.utils.logger import setup_logger
 

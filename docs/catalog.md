@@ -1,47 +1,53 @@
-# Каталог базы знаний (пример структуры)
+# Каталог базы знаний
 
-Каталог `Каталог.md` пересобирается автоматически из всех существующих заметок в папках `Телеграмм/` и `YouTube/` внутри Obsidian vault.
+Файл `Каталог.md` пересобирается автоматически (`CatalogGenerator`) после каждого
+`kb-agent process run` и группирует заметки по полю `topic` из YAML frontmatter.
+Служебные файлы (`Каталог.md`, `Дайджест.md`) в каталог не попадают.
 
 ## Пример записи в каталоге
 
 ```markdown
-## 🤖 Claude Code, Codex и ИИ для разработки
+# Каталог базы знаний
 
-- [[Телеграмм/2026-10-21T10-09_ragnarokzone_264.md]] — 2026-10-21, источник: [ragnarokzone](https://t.me/s/ragnarokzone)
-  > OpenAI опубликовала отчёт о двух случаях, когда ИИ-агенты ослабили систему слежения за собой.
+Всего заметок: 12
 
-- [[YouTube/20260910_GPT-6_Astra_Проверка_на_РЕЛЬНЫХ_задачах_4DA91qlTUVU.md]] — 2026-09-10, источник: [vladimir_kkkkkk](https://www.youtube.com/@vladimir_kkkkkk)
-  > Практическая проверка модели GPT-6 Astra на реальных задачах: автомонтаж, лендинг, чат-бот.
+## По темам
+
+### ИИ и нейросети
+
+- [Проверка GPT-6 Astra на реальных задачах](ИИ_и_нейросети/2026-09-10_проверка_gpt-6_astra.md) — 2026-09-10
 ```
 
 ## YAML frontmatter заметки
 
-Каждая итоговая заметка KB начинается с frontmatter:
+Заметку пишет `VaultManager.write_note` через `yaml.safe_dump`, поэтому значения
+экранируются корректно (заголовок с `: ` не ломает YAML).
 
 ```yaml
 ---
-source: youtube          # или telegram
-channel: vladimir_kkkkkk
-url: https://www.youtube.com/watch?v=XXXX
-thumbnail: 'https://i.ytimg.com/vi/XXXX/maxresdefault.jpg'
+source: youtube
+source_id: yt_example_channel
+external_id: yt_4DA91qlTUVU
+url: https://www.youtube.com/watch?v=4DA91qlTUVU
 date_saved: 2026-10-22
-duration: 37:03
-tags: [youtube, GPT-6, Astra]
-transcript: _transcripts/XXXX.txt
+published_at: 2026-09-10
+received_at: '2026-10-22 10:15:00'
+note_id: 2026-10-22T10_8f49ee32
+previous_note_id: null
+frontmatter_schema_version: 1
+title: Проверка GPT-6 Astra на реальных задачах
+tags:
+- youtube
+- GPT-6
+- Astra
+topic: ИИ и нейросети
 ---
 ```
 
-## Категории каталога
+Поля `title`, `tags`, `topic` используются каталогом, поиском (FTS5) и инсайтами;
+`note_id` — идентификатор для `kb_get_note`, `kb-agent feedback rate` и связей.
 
-Каталог Gruppiert записи по разделам:
-- 🤖 Claude Code, Codex и ИИ для разработки
-- 🔌 n8n и автоматизация процессов
-- 💎 Бесплатный доступ к LLM и API
-- 🧠 ИИ-агенты (автономные agents)
-- 📰 Новости ИИ и технологий
-- 🛠 Инструменты и сервисы для работы с ИИ
-- 🎬 Мультимедиа: видео, 3D, голос, дизайн
-- 🤖 Роботы и физическая автоматизация
-- 🔒 Безопасность, приватность, блокировки
-- 💻 Программирование и веб-разработка
-- 📎 Прочее
+## Тематические разделы
+
+Разделы не задаются в коде: они берутся из поля `topic`, которое LLM выбирает
+из списка тем профиля (`data/user_profile.yaml`); если тема не определена — «Общее».

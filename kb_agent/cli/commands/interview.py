@@ -17,6 +17,7 @@ from kb_agent.core.interview import InterviewManager
 from kb_agent.core.import_core import run_import_core
 from kb_agent.storage.state import StateManager
 from kb_agent.utils.logger import setup_logger
+from kb_agent.cli.output import output_json as _output_json
 
 app = typer.Typer(help="Интервью и импорт ядра материалов")
 
@@ -54,7 +55,6 @@ def interview_status(
     if json_output:
         state = StateManager(config.db_path)
         try:
-            state.init_db()
             version = state.init_db()
             stats = state.stats()
             _output_json(
@@ -84,11 +84,6 @@ def interview_status(
         typer.echo(f"Обратная связь: {stats.get('feedback', 0)}")
     finally:
         state.close()
-
-
-def _output_json(data: dict) -> None:
-    """Выводит данные в формате JSON."""
-    typer.echo(__import__("json").dumps(data, ensure_ascii=False, indent=2))
 
 
 @app.command("import-core")

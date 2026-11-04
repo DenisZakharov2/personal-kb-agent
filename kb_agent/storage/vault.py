@@ -10,6 +10,8 @@ import re
 from pathlib import Path
 from typing import Optional
 
+import yaml
+
 from kb_agent.config import AppConfig
 from kb_agent.utils.logger import setup_logger
 
@@ -83,17 +85,15 @@ class VaultManager:
             "topic": topic,
         }
 
-        lines: list[str] = []
-        lines.append("---")
-        for key, value in frontmatter.items():
-            if value is None:
-                lines.append(f"{key}:")
-            elif isinstance(value, list):
-                lines.append(f"{key}: {value}")
-            else:
-                lines.append(f"{key}: {value}")
-        lines.append("---")
-        lines.append("")
+        # YAML собираем через safe_dump: значения экранируются корректно
+        # (заголовок с «: », кавычками и т. п. больше не ломает frontmatter).
+        frontmatter_text = yaml.safe_dump(
+            frontmatter,
+            allow_unicode=True,
+            sort_keys=False,
+            default_flow_style=False,
+        ).strip()
+        lines: list[str] = ["---", frontmatter_text, "---", ""]
         lines.append(f"# {title}")
         lines.append("")
         lines.append(content)

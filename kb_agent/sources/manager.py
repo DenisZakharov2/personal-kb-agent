@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from kb_agent.config import AppConfig, load_config
-from kb_agent.sources.registry import SourceRegistry, SourceConfig
+from kb_agent.sources.registry import SourceConfig, SourceRegistry, ensure_sources_file
 from kb_agent.sources.telegram import collect_telegram_source
 from kb_agent.sources.youtube import collect_youtube_source
 from kb_agent.storage.state import StateManager
@@ -37,6 +37,8 @@ class SourceManager:
     def __init__(self, config: AppConfig, state: StateManager) -> None:
         self.config = config
         self.state = state
+        # На чистой установке создаём реестр источников, иначе сбор молча пустой
+        ensure_sources_file(config.sources_path, config=config)
         registry_path = config.sources_path
         self.registry = SourceRegistry(registry_path)
 
@@ -46,6 +48,14 @@ class SourceManager:
         self.registry.load()
         sources = self.registry.list(enabled_only=True)
         result = SourceCollectionResult()
+
+        if not sources:
+            logger.warning(
+                "Нет включённых источников в %s. Добавьте: "
+                "kb-agent sources add telegram https://t.me/s/<канал>",
+                self.registry.sources_path,
+            )
+            return result
 
         for source in sources:
             try:

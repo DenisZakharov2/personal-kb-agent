@@ -30,7 +30,7 @@ class RelevanceGate:
     def check(self, raw_text: str, title: str = "") -> RelevanceResult:
         """Проверяет сырой материал на релевантность.
 
-        Возвращает RelevantResult с флагом relevant, причиной и скором.
+        Возвращает RelevanceResult с флагом relevant, причиной и score.
         """
         text = (title + " " + raw_text).lower()
 
