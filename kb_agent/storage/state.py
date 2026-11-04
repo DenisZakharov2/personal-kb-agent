@@ -598,7 +598,7 @@ class StateManager:
         try:
             rows = conn.execute(
                 """
-                SELECT f.note_id, f.title, f.tags, f.topic, f.content,
+                SELECT f.note_id, f.title, f.tags, f.topic, f.content, f.rank,
                        n.canonical_url, n.source_id, n.external_id, n.file_path,
                        n.content_hash, n.revision
                 FROM notes_fts f

@@ -208,9 +208,9 @@ async def handle_call_tool(name: str, arguments: dict[str, Any]) -> list[TextCon
                         prov.append(f"hash={r.content_hash[:12]}")
                     prov_text = f" [{', '.join(prov)}]" if prov else ""
                     lines.append(
-                        f"- **{r.title}** (ID: {r.note_id}, теги: {r.tags}, тема: {r.topic}{prov_text})"
+                        f"- **{r.title}** (ID: {r.note_id}, теги: {r.tags}, тема: {r.topic}, score: {r.score:.2f}{prov_text})"
                     )
-                    snippet = " ".join((r.content or "").split())[:300]
+                    snippet = " ".join((r.snippet or r.content or "").split())[:300]
                     if snippet:
                         lines.append(f"  > {snippet}")
                 result_text = "\n".join(lines)
