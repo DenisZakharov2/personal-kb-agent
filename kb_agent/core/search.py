@@ -27,6 +27,13 @@ class SearchResult:
     topic: str
     content: str
     score: float = 0.0
+    # Поля provenience (из таблицы notes): источник, путь, версия и hash.
+    canonical_url: Optional[str] = None
+    source_id: Optional[str] = None
+    external_id: Optional[str] = None
+    file_path: Optional[str] = None
+    content_hash: Optional[str] = None
+    revision: Optional[int] = None
 
 
 @dataclass
@@ -63,6 +70,12 @@ class SearchEngine:
                     tags=row["tags"] or "",
                     topic=row["topic"] or "",
                     content=row.get("content", "") or "",
+                    canonical_url=row.get("canonical_url"),
+                    source_id=row.get("source_id"),
+                    external_id=row.get("external_id"),
+                    file_path=row.get("file_path"),
+                    content_hash=row.get("content_hash"),
+                    revision=row.get("revision"),
                 )
             )
 

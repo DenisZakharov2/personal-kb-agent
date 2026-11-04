@@ -193,8 +193,22 @@ async def handle_call_tool(name: str, arguments: dict[str, Any]) -> list[TextCon
             else:
                 lines = [f"## Результаты поиска: {query}", f"Найдено: {len(response.results)}", ""]
                 for r in response.results:
+                    prov = []
+                    if r.source_id:
+                        prov.append(f"источник={r.source_id}")
+                    if r.external_id:
+                        prov.append(f"external_id={r.external_id}")
+                    if r.canonical_url:
+                        prov.append(f"url={r.canonical_url}")
+                    if r.file_path:
+                        prov.append(f"путь={r.file_path}")
+                    if r.revision is not None:
+                        prov.append(f"rev={r.revision}")
+                    if r.content_hash:
+                        prov.append(f"hash={r.content_hash[:12]}")
+                    prov_text = f" [{', '.join(prov)}]" if prov else ""
                     lines.append(
-                        f"- **{r.title}** (ID: {r.note_id}, теги: {r.tags}, тема: {r.topic})"
+                        f"- **{r.title}** (ID: {r.note_id}, теги: {r.tags}, тема: {r.topic}{prov_text})"
                     )
                     snippet = " ".join((r.content or "").split())[:300]
                     if snippet:

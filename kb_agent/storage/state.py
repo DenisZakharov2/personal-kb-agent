@@ -598,8 +598,11 @@ class StateManager:
         try:
             rows = conn.execute(
                 """
-                SELECT note_id, title, tags, topic, content
-                FROM notes_fts
+                SELECT f.note_id, f.title, f.tags, f.topic, f.content,
+                       n.canonical_url, n.source_id, n.external_id, n.file_path,
+                       n.content_hash, n.revision
+                FROM notes_fts f
+                LEFT JOIN notes n ON n.note_id = f.note_id
                 WHERE notes_fts MATCH ?
                 ORDER BY rank
                 LIMIT ?
