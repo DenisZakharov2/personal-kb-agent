@@ -23,6 +23,7 @@ from mcp.types import (
     CallToolResult,
     TextContent,
     Tool,
+    ToolAnnotations,
     ServerCapabilities,
     ToolsCapability,
 )
@@ -61,6 +62,7 @@ class SearchItem(BaseModel):
     topic: str = Field(default="", description="Тема заметки")
     tags: list[str] = Field(default_factory=list, description="Теги")
     revision: Optional[int] = Field(default=None, description="Ревизия заметки")
+    content_hash: Optional[str] = Field(default=None, description="Хэш содержимого")
 
 
 class SearchOutput(BaseModel):
@@ -142,13 +144,21 @@ _NOTE_INPUT_SCHEMA = {
 _SOURCE_TYPE_ENUM = {"type": "string", "enum": ["telegram", "youtube"]}
 
 
+_READ_ONLY_ANNOTATIONS = ToolAnnotations(
+    readOnlyHint=True, destructiveHint=False, idempotentHint=True
+)
+_WRITE_ANNOTATIONS = ToolAnnotations(
+    readOnlyHint=False, destructiveHint=False, idempotentHint=False
+)
+
+
 def _read_only_tool(name: str, description: str, input_schema: dict, output_schema: Optional[dict] = None) -> Tool:
     return Tool(
         name=name,
         description=description,
         inputSchema=input_schema,
         outputSchema=output_schema,
-        annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True},
+        annotations=_READ_ONLY_ANNOTATIONS,
     )
 
 
@@ -157,7 +167,7 @@ def _write_tool(name: str, description: str, input_schema: dict) -> Tool:
         name=name,
         description=description,
         inputSchema=input_schema,
-        annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False},
+        annotations=_WRITE_ANNOTATIONS,
     )
 
 
@@ -346,7 +356,7 @@ async def handle_call_tool(name: str, arguments: Optional[dict[str, Any]]) -> An
                 )
 
             next_cursor = cursor + len(items) if cursor + len(items) < len(response.results) else None
-            output = SearchOutput(items=items, next_cursor=next_cursor, total=len(response.results))
+            search_output = SearchOutput(items=items, next_cursor=next_cursor, total=len(response.results))
 
             lines = [f"## Результаты поиска: {query}", f"Найдено: {len(response.results)}", ""]
             for it in items:
@@ -371,7 +381,7 @@ async def handle_call_tool(name: str, arguments: Optional[dict[str, Any]]) -> An
             result_text = "\n".join(lines) if lines else "В базе недостаточно данных по вашему запросу."
 
             # Возвращаем и текст, и структурированный контент (кортеж).
-            return [TextContent(type="text", text=result_text)], output.model_dump()
+            return [TextContent(type="text", text=result_text)], search_output.model_dump()
 
         elif name == "kb_get_note":
             note_id = arguments.get("note_id", "")
@@ -380,7 +390,7 @@ async def handle_call_tool(name: str, arguments: Optional[dict[str, Any]]) -> An
             note = state.get_note(note_id)
             if note is None:
                 return _error_result("not_found", f"Заметка с ID {note_id} не найдена")
-            output = NoteOutput(
+            note_output = NoteOutput(
                 note_id=note["note_id"],
                 title=note["title"] or "Без названия",
                 content=note.get("content", "") or "",
@@ -394,18 +404,18 @@ async def handle_call_tool(name: str, arguments: Optional[dict[str, Any]]) -> An
                 revision=note.get("revision"),
             )
             lines = [
-                f"## Заметка: {output.title}",
-                f"ID: {output.note_id}",
-                f"Теги: {output.tags or '—'}",
-                f"Тема: {output.topic or '—'}",
+                f"## Заметка: {note_output.title}",
+                f"ID: {note_output.note_id}",
+                f"Теги: {note_output.tags or '—'}",
+                f"Тема: {note_output.topic or '—'}",
                 "",
-                output.content or "Содержимое недоступно.",
+                note_output.content or "Содержимое недоступно.",
             ]
-            return [TextContent(type="text", text="\n".join(lines)), output.model_dump()]
+            return [TextContent(type="text", text="\n".join(lines)), note_output.model_dump()]
 
         elif name == "kb_get_insights":
-            engine = InsightsEngine(config, state)
-            response = engine.get_insights()
+            insights_engine = InsightsEngine(config, state)
+            insights_response = insights_engine.get_insights()
             insights = [
                 InsightOutput(
                     statement=i.statement,
@@ -414,9 +424,9 @@ async def handle_call_tool(name: str, arguments: Optional[dict[str, Any]]) -> An
                     evidence_note_ids=i.evidence_note_ids,
                     benefit=i.benefit,
                 )
-                for i in response.insights
+                for i in insights_response.insights
             ]
-            output = {"insights": [i.model_dump() for i in insights]}
+            insights_output = {"insights": [i.model_dump() for i in insights]}
             lines = ["## Инсайты базы знаний", ""]
             for i, insight in enumerate(insights, 1):
                 lines.append(f"{i}. {insight.statement}")
@@ -425,7 +435,7 @@ async def handle_call_tool(name: str, arguments: Optional[dict[str, Any]]) -> An
                 lines.append(f"   Польза: {insight.benefit}")
                 lines.append("")
             result_text = "\n".join(lines) if lines else "Инсайтов пока нет."
-            return [TextContent(type="text", text=result_text)], output
+            return [TextContent(type="text", text=result_text)], insights_output
 
         # ---- Write-инструменты (Этап 4) ----
 
