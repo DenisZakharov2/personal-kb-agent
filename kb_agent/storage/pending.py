@@ -7,8 +7,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
-from datetime import datetime, timezone
+import sqlite3
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import yaml
@@ -28,7 +30,7 @@ ALLOWED_ACTIONS = (
     "revert_prompt",
 )
 
-ALLOWED_STATUSES = ("pending", "confirmed", "applied", "rejected", "failed")
+ALLOWED_STATUSES = ("pending", "confirmed", "applied", "rejected", "failed", "expired")
 
 
 class PendingManager:
@@ -45,19 +47,31 @@ class PendingManager:
         entity_type: str,
         entity_id: str,
         parameters: dict,
+        ttl_seconds: Optional[int] = None,
     ) -> str:
-        """Создаёт pending-запрос. Возвращает change_id."""
+        """Создаёт pending-запрос. Возвращает change_id.
+
+        ``ttl_seconds`` задаёт срок жизни запроса: после истечения
+        ``expires_at`` статус переходит в ``expired`` (см. ``expire_pending``)
+        и предложение требует пересоздания.
+        """
         if action not in ALLOWED_ACTIONS:
             raise ValueError(f"Недопустимое действие: {action}")
 
         import uuid
 
         change_id = str(uuid.uuid4())
+        expires_at: Optional[str] = None
+        if ttl_seconds is not None:
+            expires_at = (
+                datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds)
+            ).isoformat()
         conn = self.state.connect()
         conn.execute(
             """
-            INSERT INTO pending_changes (change_id, action, entity_type, entity_id, parameters, status)
-            VALUES (?, ?, ?, ?, ?, 'pending')
+            INSERT INTO pending_changes
+                (change_id, action, entity_type, entity_id, parameters, status, revision, expires_at)
+            VALUES (?, ?, ?, ?, ?, 'pending', 0, ?)
             """,
             (
                 change_id,
@@ -65,15 +79,17 @@ class PendingManager:
                 entity_type,
                 entity_id,
                 json.dumps(parameters, ensure_ascii=False),
+                expires_at,
             ),
         )
         conn.commit()
         logger.info(
-            "Создан pending-запрос %s: action=%s entity=%s/%s",
+            "Создан pending-запрос %s: action=%s entity=%s/%s revision=0 ttl=%s",
             change_id,
             action,
             entity_type,
             entity_id,
+            ttl_seconds,
         )
         return change_id
 
@@ -99,69 +115,141 @@ class PendingManager:
 
     # ---- Подтверждение и применение ----
 
-    def confirm_change(self, change_id: str, confirmed_by: str = "user") -> bool:
-        """Подтверждает и применяет pending-запрос.
+    def confirm_change(
+        self, change_id: str, revision: int, confirmed_by: str = "user"
+    ) -> bool:
+        """Подтверждает и применяет pending-запрос с оптимистичной блокировкой.
 
-        Возвращает True при успешном применении, False — при ошибке или
-        если запрос не найден / уже не в статусе pending.
+        Проверка ``status = 'pending'`` и совпадения ``revision`` выполняется
+        атомарно в одной транзакции ``BEGIN IMMEDIATE``. При несовпадении
+        ревизии (конфликт параллельных подтверждений) запрос не применяется и
+        метод возвращает False.
+
+        Возвращает True при успешном применении, False — при ошибке, если
+        запрос не найден, уже не в статусе pending или ревизия не совпала.
         """
-        change = self.get_change(change_id)
-        if not change:
-            logger.warning("Pending-запрос %s не найден", change_id)
-            return False
-        if change["status"] != "pending":
-            logger.warning(
-                "Pending-запрос %s уже в статусе %s", change_id, change["status"]
-            )
-            return False
-
-        now = datetime.now(timezone.utc).isoformat()
-        success = self._apply_change(change)
-
         conn = self.state.connect()
-        if success:
-            conn.execute(
-                """
-                UPDATE pending_changes
-                SET status = 'applied', confirmed_at = ?, applied_at = ?, confirmed_by = ?
-                WHERE change_id = ?
-                """,
-                (now, now, confirmed_by, change_id),
-            )
-            logger.info("Pending-запрос %s применён (%s)", change_id, confirmed_by)
-        else:
-            conn.execute(
-                """
-                UPDATE pending_changes
-                SET status = 'failed', confirmed_at = ?, confirmed_by = ?
-                WHERE change_id = ?
-                """,
-                (now, confirmed_by, change_id),
-            )
-            logger.error("Pending-запрос %s не применён (ошибка)", change_id)
-        conn.commit()
-        return success
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            row = conn.execute(
+                "SELECT * FROM pending_changes WHERE change_id = ?", (change_id,)
+            ).fetchone()
+            if row is None:
+                conn.rollback()
+                logger.warning("Pending-запрос %s не найден", change_id)
+                return False
+            change = dict(row)
+            if change["status"] != "pending":
+                conn.rollback()
+                logger.warning(
+                    "Pending-запрос %s уже в статусе %s", change_id, change["status"]
+                )
+                return False
+            if change["revision"] != revision:
+                conn.rollback()
+                logger.warning(
+                    "Конфликт ревизии для %s: клиент=%s, в БД=%s",
+                    change_id,
+                    revision,
+                    change["revision"],
+                )
+                return False
 
-    def reject_change(self, change_id: str) -> bool:
-        """Отклоняет pending-запрос (статус → rejected)."""
+            success = self._apply_change(change, conn=conn)
+
+            now = datetime.now(timezone.utc).isoformat()
+            parameters = json.loads(change["parameters"] or "{}")
+            content_hash = hashlib.sha256(
+                json.dumps(parameters, sort_keys=True, ensure_ascii=False).encode(
+                    "utf-8"
+                )
+            ).hexdigest()
+
+            if success:
+                conn.execute(
+                    """
+                    UPDATE pending_changes
+                    SET status = 'applied', confirmed_at = ?, applied_at = ?,
+                        confirmed_by = ?, content_hash = ?, revision = revision + 1
+                    WHERE change_id = ?
+                    """,
+                    (now, now, confirmed_by, content_hash, change_id),
+                )
+                logger.info(
+                    "Pending-запрос %s применён (%s, ревизия %s→%s)",
+                    change_id,
+                    confirmed_by,
+                    revision,
+                    revision + 1,
+                )
+            else:
+                conn.execute(
+                    """
+                    UPDATE pending_changes
+                    SET status = 'failed', confirmed_at = ?, confirmed_by = ?,
+                        content_hash = ?, revision = revision + 1
+                    WHERE change_id = ?
+                    """,
+                    (now, confirmed_by, content_hash, change_id),
+                )
+                logger.error("Pending-запрос %s не применён (ошибка)", change_id)
+            conn.commit()
+            return success
+        except Exception:
+            conn.rollback()
+            logger.exception("Ошибка подтверждения pending-запроса %s", change_id)
+            raise
+
+    def reject_change(self, change_id: str, reason: Optional[str] = None) -> bool:
+        """Отклоняет pending-запрос со статусом rejected и записью причины."""
         conn = self.state.connect()
         cur = conn.execute(
             """
             UPDATE pending_changes
-            SET status = 'rejected'
+            SET status = 'rejected', reject_reason = ?, revision = revision + 1
             WHERE change_id = ? AND status = 'pending'
             """,
-            (change_id,),
+            (reason, change_id),
         )
         conn.commit()
         if cur.rowcount > 0:
-            logger.info("Pending-запрос %s отклонён", change_id)
+            logger.info("Pending-запрос %s отклонён (причина: %s)", change_id, reason)
         return cur.rowcount > 0
+
+    def expire_pending(self, now: Optional[str] = None) -> int:
+        """Переводит истёкшие по TTL pending-запросы в статус ``expired``.
+
+        Возвращает количество переведённых записей. Предложение со статусом
+        expired требует пересоздания.
+        """
+        if now is None:
+            now = datetime.now(timezone.utc).isoformat()
+        conn = self.state.connect()
+        cur = conn.execute(
+            """
+            UPDATE pending_changes
+            SET status = 'expired', revision = revision + 1
+            WHERE status = 'pending'
+              AND expires_at IS NOT NULL
+              AND expires_at <= ?
+            """,
+            (now,),
+        )
+        conn.commit()
+        if cur.rowcount > 0:
+            logger.info("Истёкло pending-запросов: %s", cur.rowcount)
+        return cur.rowcount
 
     # ---- Применение конкретных действий ----
 
-    def _apply_change(self, change: dict) -> bool:
-        """Применяет подтверждённое изменение в зависимости от действия."""
+    def _apply_change(self, change: dict, conn=None) -> bool:
+        """Применяет подтверждённое изменение в зависимости от действия.
+
+        Выполняется в переданном соединении (или собственном) без отдельного
+        коммита, чтобы confirmaцияremaining оставалась атомарной транзакцией.
+        """
+        c = conn or self.state.connect()
+        own = conn is None
         action = change["action"]
         parameters = json.loads(change["parameters"] or "{}")
 
@@ -172,18 +260,20 @@ class PendingManager:
                     source_type=parameters["source_type"],
                     channel=parameters["channel"],
                     enabled=parameters.get("enabled", True),
+                    conn=c,
                 )
             elif action == "remove_source":
-                self.state.remove_source(parameters["source_id"])
+                self.state.remove_source(parameters["source_id"], conn=c)
             elif action == "enable_source":
                 self.state.set_source_enabled(
                     parameters["source_id"],
                     parameters.get("enabled", True),
+                    conn=c,
                 )
             elif action == "update_profile":
                 self._update_profile(parameters)
             elif action == "revert_prompt":
-                self._revert_prompt(parameters)
+                self._revert_prompt(parameters, conn=c)
             else:
                 logger.error("Неизвестное действие: %s", action)
                 return False
@@ -195,23 +285,30 @@ class PendingManager:
                 "status": "error",
                 "error": str(exc),
             }
-            self._save_result(change["change_id"], result)
+            self._save_result(change["change_id"], result, conn=c)
+            if own:
+                c.rollback()
             return False
 
         result = {
             "applied_at": datetime.now(timezone.utc).isoformat(),
             "status": "success",
         }
-        self._save_result(change["change_id"], result)
+        self._save_result(change["change_id"], result, conn=c)
+        if own:
+            c.commit()
         return True
 
-    def _save_result(self, change_id: str, result: dict) -> None:
-        conn = self.state.connect()
-        conn.execute(
+    def _save_result(
+        self, change_id: str, result: dict, conn: Optional[sqlite3.Connection] = None
+    ) -> None:
+        c = conn or self.state.connect()
+        c.execute(
             "UPDATE pending_changes SET result = ? WHERE change_id = ?",
             (json.dumps(result, ensure_ascii=False), change_id),
         )
-        conn.commit()
+        if conn is None:
+            c.commit()
 
     def _update_profile(self, parameters: dict) -> None:
         """Обновляет user_profile.yaml на основе параметров."""
@@ -236,16 +333,18 @@ class PendingManager:
         )
         logger.info("Профиль обновлён: %s", profile_path)
 
-    def _revert_prompt(self, parameters: dict) -> None:
+    def _revert_prompt(
+        self, parameters: dict, conn: Optional[sqlite3.Connection] = None
+    ) -> None:
         """Откатывает промпт к указанной (или предыдущей) версии."""
+        c = conn or self.state.connect()
+        own = conn is None
         prompt_name = parameters["prompt_name"]
         target_version = parameters.get("version")
 
-        conn = self.state.connect()
-
         if target_version is None:
             # Находим текущую активную версию и берём предыдущую
-            current = conn.execute(
+            current = c.execute(
                 """
                 SELECT version FROM prompt_history
                 WHERE prompt_name = ? AND is_active = 1
@@ -259,7 +358,7 @@ class PendingManager:
                 raise ValueError(f"Нет активной версии промпта {prompt_name}")
             target_version = current["version"] - 1
 
-        target = conn.execute(
+        target = c.execute(
             """
             SELECT * FROM prompt_history
             WHERE prompt_name = ? AND version = ?
@@ -269,11 +368,11 @@ class PendingManager:
         if not target:
             raise ValueError(f"Версия {target_version} промпта {prompt_name} не найдена")
 
-        conn.execute(
+        c.execute(
             "UPDATE prompt_history SET is_active = 0 WHERE prompt_name = ?",
             (prompt_name,),
         )
-        conn.execute(
+        c.execute(
             """
             UPDATE prompt_history
             SET is_active = 1
@@ -281,7 +380,6 @@ class PendingManager:
             """,
             (prompt_name, target_version),
         )
-        conn.commit()
-        logger.info(
-            "Промпт %s откатан к версии %s", prompt_name, target_version
-        )
+        if own:
+            c.commit()
+        logger.info("Промпт %s откатан к версии %s", prompt_name, target_version)

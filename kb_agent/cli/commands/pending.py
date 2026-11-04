@@ -47,6 +47,7 @@ def pending_command(
                     "changes": [
                         {
                             "change_id": c["change_id"],
+                            "revision": c["revision"],
                             "action": c["action"],
                             "entity_type": c["entity_type"],
                             "entity_id": c["entity_id"],
@@ -71,7 +72,8 @@ def pending_command(
         for c in changes:
             params = c["parameters"] or "{}"
             typer.echo(
-                f"  {c['change_id']} | {c['action']} | {c['entity_type']}/{c['entity_id']} | {c['status']}"
+                f"  {c['change_id']} | ревизия {c['revision']} | {c['action']} | "
+                f"{c['entity_type']}/{c['entity_id']} | {c['status']}"
             )
             typer.echo(f"    Параметры: {params[:120]}")
             typer.echo(f"    Создан: {c['created_at']}")
