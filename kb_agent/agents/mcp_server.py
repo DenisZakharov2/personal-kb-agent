@@ -33,6 +33,7 @@ from kb_agent.config import load_config
 from kb_agent.core.search import SearchEngine
 from kb_agent.core.insights import InsightsEngine
 from kb_agent.processing.llm_client import LLMClient
+from kb_agent.sources.registry import normalize_source
 from kb_agent.storage.pending import PendingManager
 from kb_agent.storage.state import StateManager
 from kb_agent.utils.logger import setup_logger
@@ -432,13 +433,12 @@ async def handle_call_tool(name: str, arguments: Optional[dict[str, Any]]) -> An
             source_type = arguments.get("source_type", "")
             channel = arguments.get("channel", "")
             enabled = bool(arguments.get("enabled", True))
-            if source_type not in ("telegram", "youtube"):
-                return _error_result("invalid_argument", f"Неподдерживаемый тип источника: {source_type}. Доступны: telegram, youtube.")
+            try:
+                source_id, channel, source_type = normalize_source(source_type, channel)
+            except ValueError as exc:
+                return _error_result("invalid_argument", str(exc))
 
             pm = PendingManager(state)
-            prefix = "tg" if source_type == "telegram" else "yt"
-            channel_clean = channel.replace("@", "").replace("/", "_")
-            source_id = f"{prefix}_{channel_clean}"
             change_id = pm.create_change(
                 action="add_source",
                 entity_type="source",

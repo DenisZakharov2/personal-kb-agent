@@ -12,7 +12,7 @@ from __future__ import annotations
 import typer
 
 from kb_agent.config import load_config
-from kb_agent.sources.registry import SourceConfig, SourceRegistry
+from kb_agent.sources.registry import SourceConfig, SourceRegistry, normalize_source
 from kb_agent.utils.logger import setup_logger
 from kb_agent.cli.output import output_json as _output_json
 
@@ -98,24 +98,23 @@ def sources_add(
     ),
 ) -> None:
     """Добавить новый источник в sources.yaml."""
-    if source_type not in ("telegram", "youtube"):
-        msg = f"Неподдерживаемый тип источника: {source_type}. Доступны: telegram, youtube."
-        if json_output:
-            _output_json({"error": msg})
-        else:
-            typer.echo(msg, err=True)
-        raise typer.Exit(code=1)
-
     config = load_config()
     state = StateManager(config.db_path)
     try:
         state.init_db()
         registry = SourceRegistry(sources_path=config.sources_path, state=state)
 
-        # Генерируем source_id если не указан
-        if not source_id:
-            channel_name = url.rstrip("/").split("/")[-1].replace("@", "")
-            source_id = f"{'tg' if source_type == 'telegram' else 'yt'}_{channel_name}"
+        # Нормализуем и валидируем тип + URL (P2-13).
+        try:
+            norm_id, norm_url, norm_type = normalize_source(source_type, url, source_id)
+        except ValueError as exc:
+            msg = str(exc)
+            if json_output:
+                _output_json({"error": msg})
+            else:
+                typer.echo(msg, err=True)
+            raise typer.Exit(code=1)
+        source_id, url, source_type = norm_id, norm_url, norm_type
 
         # Проверяем дубликат
         if registry.get(source_id):
