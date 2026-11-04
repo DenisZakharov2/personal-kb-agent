@@ -40,7 +40,7 @@ class SourceManager:
         # На чистой установке создаём реестр источников, иначе сбор молча пустой
         ensure_sources_file(config.sources_path, config=config)
         registry_path = config.sources_path
-        self.registry = SourceRegistry(registry_path)
+        self.registry = SourceRegistry(sources_path=registry_path, state=state)
 
     def collect_all(self, limit: Optional[int] = None) -> SourceCollectionResult:
         """Опрашивает все включённые источники."""

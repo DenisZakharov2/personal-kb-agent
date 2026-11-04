@@ -50,7 +50,8 @@ class LLMClient:
         self.timeout = float(getattr(config, "llm_timeout", 60.0))
         self.max_retries = max(0, int(getattr(config, "llm_max_retries", 2)))
 
-        if not self.api_key:
+        # Локальные провайдеры (Ollama и т.п.) не требуют API-ключа
+        if not self.api_key and self.provider not in ("ollama", "local", "custom"):
             logger.warning("API ключ LLM не задан (KB_OPENAI_API_KEY)")
 
     def _headers(self) -> dict[str, str]:
@@ -83,7 +84,7 @@ class LLMClient:
         temperature = temperature if temperature is not None else self.temperature
         max_tokens = max_tokens or self.max_tokens
 
-        if not self.api_key:
+        if not self.api_key and self.provider not in ("ollama", "local", "custom"):
             return LLMResponse(
                 text="",
                 model=model,

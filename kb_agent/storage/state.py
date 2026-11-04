@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 import sqlite3
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable, Optional, Union
 
@@ -194,6 +195,13 @@ _SCHEMA = [
         10,
         _migrate_feedback_allow_zero,
     ),
+    (
+        11,
+        """
+        ALTER TABLE raw_queue ADD COLUMN processing_started_at TEXT;
+        ALTER TABLE raw_queue ADD COLUMN lease_expires_at TEXT;
+        """,
+    ),
 ]
 
 SCHEMA_VERSION = max(v for v, _ in _SCHEMA)
@@ -315,16 +323,87 @@ class StateManager:
     def mark_failed(self, queue_id: int, error: str, next_retry_at: Optional[str] = None) -> None:
         conn = self.connect()
         conn.execute(
-            "UPDATE raw_queue SET state = 'failed', last_error = ?, next_retry_at = ? WHERE id = ?",
+            "UPDATE raw_queue SET state = 'failed', last_error = ?, next_retry_at = ?, lease_expires_at = NULL WHERE id = ?",
             (error, next_retry_at, queue_id),
+        )
+        conn.commit()
+
+    def claim_next(
+        self,
+        lease_seconds: int = 300,
+    ) -> Optional[dict]:
+        """Атоматически захватывает задание для обработки.
+
+        Выбирает элемент в состоянии 'new', либо 'processing'/'failed'
+        с истекшим lease (lease_expires_at < now) либо failed с
+        next_retry_at <= now. Возвращает запись или None.
+
+        Использует BEGIN IMMEDIATE для защиты от параллельных воркеров.
+        """
+        conn = self.connect()
+        now = datetime.now(timezone.utc).isoformat()
+
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            row = conn.execute(
+                """
+                SELECT * FROM raw_queue
+                WHERE (
+                    state = 'new'
+                    OR (state = 'processing' AND lease_expires_at IS NOT NULL AND lease_expires_at < ?)
+                    OR (state = 'failed' AND next_retry_at IS NOT NULL AND next_retry_at <= ?)
+                )
+                ORDER BY received_at ASC
+                LIMIT 1
+                """,
+                (now, now),
+            ).fetchone()
+
+            if row is None:
+                conn.rollback()
+                return None
+
+            queue_id = row["id"]
+            lease_expires = (datetime.now(timezone.utc) + timedelta(seconds=lease_seconds)).isoformat()
+
+            conn.execute(
+                """
+                UPDATE raw_queue
+                SET state = 'processing',
+                    attempts = attempts + 1,
+                    processing_started_at = ?,
+                    lease_expires_at = ?
+                WHERE id = ?
+                """,
+                (now, lease_expires, queue_id),
+            )
+            conn.commit()
+            return dict(row)
+        except Exception:
+            conn.rollback()
+            raise
+
+    def release_lease(self, queue_id: int) -> None:
+        """Освобождает lease, возвращая элемент в состояние 'new' (если не был завершён)."""
+        conn = self.connect()
+        conn.execute(
+            """
+            UPDATE raw_queue
+            SET state = 'new',
+                processing_started_at = NULL,
+                lease_expires_at = NULL
+            WHERE id = ? AND state = 'processing'
+            """,
+            (queue_id,),
         )
         conn.commit()
 
     def index_note(self, note_id: str, title: str, tags: str, topic: str, content: str) -> None:
         conn = self.connect()
+        conn.execute("DELETE FROM notes_fts WHERE note_id = ?", (note_id,))
         conn.execute(
             """
-            INSERT OR REPLACE INTO notes_fts (note_id, title, tags, topic, content)
+            INSERT INTO notes_fts (note_id, title, tags, topic, content)
             VALUES (?, ?, ?, ?, ?)
             """,
             (note_id, title, tags, topic, content),

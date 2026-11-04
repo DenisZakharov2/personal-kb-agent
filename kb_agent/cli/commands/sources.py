@@ -35,10 +35,15 @@ def sources_list(
         help="Вывести результат в формате JSON",
     ),
 ) -> None:
-    """Показать список всех источников из sources.yaml."""
+    """Показать список всех источников из канонического хранилища (SQLite)."""
     config = load_config()
-    registry = SourceRegistry(config.sources_path)
-    sources = registry.list(enabled_only=enabled_only)
+    state = StateManager(config.db_path)
+    try:
+        state.init_db()
+        registry = SourceRegistry(sources_path=config.sources_path, state=state)
+        sources = registry.list(enabled_only=enabled_only)
+    finally:
+        state.close()
 
     if json_output:
         _output_json(
@@ -102,55 +107,58 @@ def sources_add(
         raise typer.Exit(code=1)
 
     config = load_config()
-    registry = SourceRegistry(config.sources_path)
-    registry.load()
+    state = StateManager(config.db_path)
+    try:
+        state.init_db()
+        registry = SourceRegistry(sources_path=config.sources_path, state=state)
 
-    # Генерируем source_id если не указан
-    if not source_id:
-        channel_name = url.rstrip("/").split("/")[-1].replace("@", "")
-        source_id = f"{'tg' if source_type == 'telegram' else 'yt'}_{channel_name}"
+        # Генерируем source_id если не указан
+        if not source_id:
+            channel_name = url.rstrip("/").split("/")[-1].replace("@", "")
+            source_id = f"{'tg' if source_type == 'telegram' else 'yt'}_{channel_name}"
 
-    # Проверяем дубликат
-    if registry.get(source_id):
-        msg = f"Источник {source_id} уже существует."
-        if json_output:
-            _output_json({"error": msg, "source_id": source_id})
-        else:
-            typer.echo(msg, err=True)
-        raise typer.Exit(code=1)
+        # Проверяем дубликат
+        if registry.get(source_id):
+            msg = f"Источник {source_id} уже существует."
+            if json_output:
+                _output_json({"error": msg, "source_id": source_id})
+            else:
+                typer.echo(msg, err=True)
+            raise typer.Exit(code=1)
 
-    cfg = SourceConfig(
-        id=source_id,
-        type=source_type,
-        url=url,
-        enabled=enabled,
-    )
-    if registry.add(cfg):
-        result = {
-            "action": "add_source",
-            "source_id": source_id,
-            "source_type": source_type,
-            "url": url,
-            "enabled": enabled,
-            "status": "saved",
-            "file": str(config.sources_path),
-        }
-        if json_output:
-            _output_json(result)
+        cfg = SourceConfig(
+            id=source_id,
+            type=source_type,
+            url=url,
+            enabled=enabled,
+        )
+        if registry.add(cfg):
+            result = {
+                "action": "add_source",
+                "source_id": source_id,
+                "source_type": source_type,
+                "url": url,
+                "enabled": enabled,
+                "status": "saved",
+                "file": str(config.sources_path),
+            }
+            if json_output:
+                _output_json(result)
+            else:
+                typer.echo(f"✓ Источник добавлен:")
+                typer.echo(f"  source_id: {source_id}")
+                typer.echo(f"  тип: {source_type}")
+                typer.echo(f"  URL: {url}")
+                typer.echo(f"  включён: {enabled}")
         else:
-            typer.echo(f"✓ Источник добавлен в sources.yaml:")
-            typer.echo(f"  source_id: {source_id}")
-            typer.echo(f"  тип: {source_type}")
-            typer.echo(f"  URL: {url}")
-            typer.echo(f"  включён: {enabled}")
-            typer.echo(f"  файл: {config.sources_path}")
-    else:
-        msg = f"Не удалось добавить источник {source_id}."
-        if json_output:
-            _output_json({"error": msg, "source_id": source_id})
-        else:
-            typer.echo(msg, err=True)
-        raise typer.Exit(code=1)
+            msg = f"Не удалось добавить источник {source_id}."
+            if json_output:
+                _output_json({"error": msg, "source_id": source_id})
+            else:
+                typer.echo(msg, err=True)
+            raise typer.Exit(code=1)
+    finally:
+        state.close()
 
 
 @app.command("remove")
@@ -163,81 +171,87 @@ def sources_remove(
         help="Вывести результат в формате JSON",
     ),
 ) -> None:
-    """Удалить источник из sources.yaml."""
+    """Удалить источник из канонического хранилища (SQLite)."""
     config = load_config()
-    registry = SourceRegistry(config.sources_path)
-    registry.load()
+    state = StateManager(config.db_path)
+    try:
+        state.init_db()
+        registry = SourceRegistry(sources_path=config.sources_path, state=state)
 
-    if not registry.get(source_id):
-        msg = f"Источник {source_id} не найден."
-        if json_output:
-            _output_json({"error": msg, "source_id": source_id})
+        if not registry.get(source_id):
+            msg = f"Источник {source_id} не найден."
+            if json_output:
+                _output_json({"error": msg, "source_id": source_id})
+            else:
+                typer.echo(msg, err=True)
+            raise typer.Exit(code=1)
+
+        if registry.remove(source_id):
+            result = {
+                "action": "remove_source",
+                "source_id": source_id,
+                "status": "removed",
+            }
+            if json_output:
+                _output_json(result)
+            else:
+                typer.echo(f"✓ Источник {source_id} удалён.")
         else:
-            typer.echo(msg, err=True)
-        raise typer.Exit(code=1)
+            msg = f"Не удалось удалить источник {source_id}."
+            if json_output:
+                _output_json({"error": msg, "source_id": source_id})
+            else:
+                typer.echo(msg, err=True)
+            raise typer.Exit(code=1)
+    finally:
+        state.close()
 
-    if registry.remove(source_id):
+
+def _toggle_source(source_id: str, enabled: bool, action_word: str, json_output: bool) -> None:
+    """Включить или выключить источник в каноническом хранилище (SQLite)."""
+    config = load_config()
+    state = StateManager(config.db_path)
+    try:
+        state.init_db()
+        registry = SourceRegistry(sources_path=config.sources_path, state=state)
+
+        source = registry.get(source_id)
+        if not source:
+            msg = f"Источник {source_id} не найден."
+            if json_output:
+                _output_json({"error": msg, "source_id": source_id})
+            else:
+                typer.echo(msg, err=True)
+            raise typer.Exit(code=1)
+
+        if source.enabled == enabled:
+            msg = f"Источник {source_id} уже {'включён' if enabled else 'выключен'}."
+            if json_output:
+                _output_json(
+                    {
+                        "source_id": source_id,
+                        "enabled": enabled,
+                        "status": "unchanged",
+                        "message": msg,
+                    }
+                )
+            else:
+                typer.echo(msg)
+            return
+
+        registry.set_enabled(source_id, enabled)
         result = {
-            "action": "remove_source",
+            "action": "enable_source",
             "source_id": source_id,
-            "status": "removed",
-            "file": str(config.sources_path),
+            "enabled": enabled,
+            "status": "saved",
         }
         if json_output:
             _output_json(result)
         else:
-            typer.echo(f"✓ Источник {source_id} удалён из sources.yaml.")
-    else:
-        msg = f"Не удалось удалить источник {source_id}."
-        if json_output:
-            _output_json({"error": msg, "source_id": source_id})
-        else:
-            typer.echo(msg, err=True)
-        raise typer.Exit(code=1)
-
-
-def _toggle_source(source_id: str, enabled: bool, action_word: str, json_output: bool) -> None:
-    """Включить или выключить источник в sources.yaml."""
-    config = load_config()
-    registry = SourceRegistry(config.sources_path)
-    registry.load()
-
-    source = registry.get(source_id)
-    if not source:
-        msg = f"Источник {source_id} не найден."
-        if json_output:
-            _output_json({"error": msg, "source_id": source_id})
-        else:
-            typer.echo(msg, err=True)
-        raise typer.Exit(code=1)
-
-    if source.enabled == enabled:
-        msg = f"Источник {source_id} уже {'включён' if enabled else 'выключен'}."
-        if json_output:
-            _output_json(
-                {
-                    "source_id": source_id,
-                    "enabled": enabled,
-                    "status": "unchanged",
-                    "message": msg,
-                }
-            )
-        else:
-            typer.echo(msg)
-        return
-
-    registry.set_enabled(source_id, enabled)
-    result = {
-        "action": "enable_source",
-        "source_id": source_id,
-        "enabled": enabled,
-        "status": "saved",
-        "file": str(config.sources_path),
-    }
-    if json_output:
-        _output_json(result)
-    else:
-        typer.echo(f"✓ Источник {source_id} {'включён' if enabled else 'выключен'} в sources.yaml.")
+            typer.echo(f"✓ Источник {source_id} {'включён' if enabled else 'выключен'}.")
+    finally:
+        state.close()
 
 
 @app.command("enable")

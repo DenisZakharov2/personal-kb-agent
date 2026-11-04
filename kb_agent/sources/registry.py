@@ -1,13 +1,15 @@
 """Реестр источников данных (Этап 5).
 
-Управляет файлом sources.yaml — единственным источником истины для
-конфигурации источников. Состояние приложения (очередь, заметки, связи)
-хранится только в SQLite; sources.yaml — только конфиг.
+Каноническое хранилище — таблица `sources` в SQLite (через StateManager).
+Файл sources.yaml используется только для импорта/экспорта и обратной
+совместимости. CLI и MCP должны использовать один экземпляр SourceRegistry
+с общим StateManager, чтобы избежать расхождения данных.
 """
 
 from __future__ import annotations
 
 import shutil
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -15,39 +17,86 @@ import yaml
 
 from kb_agent.config import AppConfig, PROJECT_ROOT, load_config
 from kb_agent.sources.base import SourceConfig
+from kb_agent.storage.state import StateManager
 from kb_agent.utils.logger import setup_logger
 
 logger = setup_logger("kb_agent.sources.registry")
 
 
 class SourceRegistry:
-    """Реестр источников на базе sources.yaml."""
+    """Реестр источников. SQLite — каноническое хранилище, YAML — только import/export."""
 
-    def __init__(self, sources_path: Optional[Path] = None) -> None:
+    def __init__(
+        self,
+        sources_path: Optional[Path] = None,
+        state: Optional[StateManager] = None,
+    ) -> None:
         if sources_path is None:
             config = load_config()
             sources_path = config.sources_path
         self.sources_path = Path(sources_path)
+        self.state = state
         self._sources: dict[str, SourceConfig] = {}
         self._loaded = False
+        self._use_sqlite = state is not None
+
+    # ---- 내부: преобразование между SourceConfig и строкой SQLite ----
+
+    def _row_to_config(self, row: dict) -> SourceConfig:
+        return SourceConfig(
+            id=row["source_id"],
+            type=row["source_type"],
+            url=row["channel"],
+            enabled=bool(row["enabled"]),
+            last_checked=row.get("updated_at"),
+            last_updated=row.get("updated_at"),
+        )
+
+    def _config_to_row(self, cfg: SourceConfig) -> dict:
+        return {
+            "source_id": cfg.id,
+            "source_type": cfg.type,
+            "channel": cfg.url,
+            "enabled": int(cfg.enabled),
+        }
+
+    # ---- Загрузка ----
 
     def load(self) -> dict[str, SourceConfig]:
-        """Загружает источники из sources.yaml."""
+        """Загружает источники из канонического хранилища (SQLite или YAML)."""
         if self._loaded and not self._sources:
-            # уже пытались загрузить, файл пуст/отсутствует
             return self._sources
+
+        if self._use_sqlite:
+            self._load_from_sqlite()
+        else:
+            self._load_from_yaml()
+
+        self._loaded = True
+        logger.info("Загружено источников: %s", len(self._sources))
+        return self._sources
+
+    def _load_from_sqlite(self) -> None:
+        if self.state is None:
+            self._sources = {}
+            return
+        conn = self.state.connect()
+        rows = conn.execute(
+            "SELECT source_id, source_type, channel, enabled, updated_at FROM sources ORDER BY source_id"
+        ).fetchall()
+        self._sources = {row["source_id"]: self._row_to_config(dict(row)) for row in rows}
+
+    def _load_from_yaml(self) -> None:
         if not self.sources_path.exists():
             logger.warning("Файл источников не найден: %s", self.sources_path)
             self._sources = {}
-            self._loaded = True
-            return self._sources
+            return
         try:
             data = yaml.safe_load(self.sources_path.read_text(encoding="utf-8")) or {}
         except Exception as exc:  # noqa: BLE001
             logger.error("Ошибка чтения sources.yaml: %s", exc)
             self._sources = {}
-            self._loaded = True
-            return self._sources
+            return
 
         sources: dict[str, SourceConfig] = {}
         for item in data.get("sources", []) or []:
@@ -57,12 +106,15 @@ class SourceRegistry:
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Пропуск некорректного источника %s: %s", item, exc)
         self._sources = sources
-        self._loaded = True
-        logger.info("Загружено источников: %s", len(sources))
-        return self._sources
+
+    # ---- Сохранение (YAML — только экспорт) ----
 
     def save(self) -> None:
-        """Сохраняет источники в sources.yaml."""
+        """Сохраняет источники в sources.yaml (экспорт, не каноническое хранилище)."""
+        if self._use_sqlite:
+            # SQLite уже обновлён через add/remove/set_enabled; YAML — только опциональный экспорт
+            self._export_to_yaml()
+            return
         self.sources_path.parent.mkdir(parents=True, exist_ok=True)
         data = {
             "version": 1,
@@ -73,6 +125,46 @@ class SourceRegistry:
             encoding="utf-8",
         )
         logger.info("Сохранено источников: %s в %s", len(self._sources), self.sources_path)
+
+    def _export_to_yaml(self) -> None:
+        """Экспортирует источники из SQLite в sources.yaml (для ручного редактирования)."""
+        try:
+            self.sources_path.parent.mkdir(parents=True, exist_ok=True)
+            data = {
+                "version": 1,
+                "sources": [cfg.to_dict() for cfg in self._sources.values()],
+            }
+            self.sources_path.write_text(
+                yaml.dump(data, allow_unicode=True, sort_keys=False),
+                encoding="utf-8",
+            )
+            logger.info("Экспортировано источников: %s в %s", len(self._sources), self.sources_path)
+        except OSError as exc:
+            logger.warning("Не удалось экспортировать sources.yaml: %s", exc)
+
+    def import_from_yaml(self, sources_path: Optional[Path] = None) -> int:
+        """Импортирует источники из YAML-файла в SQLite (kanon). Возвращает количество импортированных."""
+        path = Path(sources_path) if sources_path else self.sources_path
+        if not path.exists():
+            logger.warning("YAML файл не найден для импорта: %s", path)
+            return 0
+        try:
+            data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Ошибка чтения YAML для импорта: %s", exc)
+            return 0
+
+        count = 0
+        for item in data.get("sources", []) or []:
+            try:
+                cfg = SourceConfig.from_dict(item)
+                self.add(cfg)
+                count += 1
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Пропуск некорректного источника при импорте %s: %s", item, exc)
+        return count
+
+    # ---- Чтение ----
 
     def list(self, enabled_only: bool = False) -> list[SourceConfig]:
         """Возвращает список источников."""
@@ -87,12 +179,36 @@ class SourceRegistry:
         self.load()
         return self._sources.get(source_id)
 
+    # ---- Запись (할я SQLite канонически) ----
+
     def add(self, source_config: SourceConfig) -> bool:
         """Добавляет источник. Возвращает False, если уже существует."""
         self.load()
         if source_config.id in self._sources:
             logger.warning("Источник %s уже существует", source_config.id)
             return False
+
+        if self._use_sqlite:
+            conn = self.state.connect()
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO sources (source_id, source_type, channel, enabled)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (
+                        source_config.id,
+                        source_config.type,
+                        source_config.url,
+                        int(source_config.enabled),
+                    ),
+                )
+                conn.commit()
+            except Exception as exc:  # noqa: BLE001
+                conn.rollback()
+                logger.error("Ошибка добавления источника в SQLite %s: %s", source_config.id, exc)
+                return False
+
         self._sources[source_config.id] = source_config
         self.save()
         logger.info("Источник добавлен: %s (%s)", source_config.id, source_config.type)
@@ -104,6 +220,14 @@ class SourceRegistry:
         if source_id not in self._sources:
             logger.warning("Источник %s не найден", source_id)
             return False
+
+        if self._use_sqlite:
+            conn = self.state.connect()
+            cur = conn.execute("DELETE FROM sources WHERE source_id = ?", (source_id,))
+            conn.commit()
+            if cur.rowcount == 0:
+                return False
+
         del self._sources[source_id]
         self.save()
         logger.info("Источник удалён: %s", source_id)
@@ -116,6 +240,21 @@ class SourceRegistry:
         if not source:
             logger.warning("Источник %s не найден", source_id)
             return False
+
+        if self._use_sqlite:
+            conn = self.state.connect()
+            cur = conn.execute(
+                """
+                UPDATE sources
+                SET enabled = ?, updated_at = datetime('now')
+                WHERE source_id = ?
+                """,
+                (int(enabled), source_id),
+            )
+            conn.commit()
+            if cur.rowcount == 0:
+                return False
+
         source.enabled = enabled
         self.save()
         logger.info("Источник %s: enabled=%s", source_id, enabled)
@@ -127,13 +266,25 @@ class SourceRegistry:
         source = self._sources.get(source_id)
         if not source:
             return
-        from datetime import datetime, timezone
 
         now = datetime.now(timezone.utc).isoformat()
         if checked:
             source.last_checked = now
         if updated:
             source.last_updated = now
+
+        if self._use_sqlite:
+            conn = self.state.connect()
+            conn.execute(
+                """
+                UPDATE sources
+                SET updated_at = datetime('now')
+                WHERE source_id = ?
+                """,
+                (source_id,),
+            )
+            conn.commit()
+
         self.save()
 
 

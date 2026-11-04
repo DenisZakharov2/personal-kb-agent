@@ -105,20 +105,25 @@ class Pipeline:
         return result
 
     def _process_queue(self) -> dict:
-        """Обрабатывает все элементы в состоянии 'new' из raw_queue."""
+        """Обрабатывает элементы из raw_queue с lease-захватом и повторами.
+
+        Использует claim_next для атоматического захвата заданий.
+        Повторяет failed элементы после истечения next_retry_at.
+        Освобождает зависшие processing элементы после истечения lease.
+        """
         created = 0
         skipped = 0
         failed = 0
         processed_total = 0
         relevance_skipped = 0
+        lease_seconds = 300  # 5 минут на обработку одного элемента
 
         while True:
-            item = self.state.get_next_new()
+            item = self.state.claim_next(lease_seconds=lease_seconds)
             if item is None:
                 break
 
             queue_id = item["id"]
-            self.state.mark_processing(queue_id)
             processed_total += 1
 
             try:
@@ -155,6 +160,7 @@ class Pipeline:
                     self.state.mark_failed(
                         queue_id,
                         llm_response.error or "пустой ответ от LLM",
+                        next_retry_at=None,
                     )
                     failed += 1
                     continue
@@ -180,7 +186,8 @@ class Pipeline:
                     content=llm_response.text,
                 )
 
-                # Индексируем в FTS5
+                # Индексируем в FTS5 (с удалением старой записи при дубле)
+                self.state.remove_from_index(note_id)
                 self.state.index_note(
                     note_id=note_id,
                     title=item["title"] or "Без названия",
