@@ -91,17 +91,24 @@ class Pipeline:
         digest_path = self._write_vault_digest(digest, tg_stats, yt_stats)
         logger.info("Дайджест записан: %s", digest_path)
 
-        # Итоговый дайджест
+        collection_errors = list(collection.errors or [])
+        processing_failed = digest.get("failed", 0)
+        ok = not collection_errors and processing_failed == 0
+
+        # Итоговый дайджест (P2-14: ошибки сбора/обработки попадают в итог,
+        # флаг ok определяет политику exit code в CLI).
         result = {
             "collection": {
                 "telegram": tg_stats,
                 "youtube": yt_stats,
+                "errors": collection_errors,
             },
             "processing": digest,
             "catalog": str(catalog_path),
             "vault_digest": str(digest_path),
+            "ok": ok,
         }
-        logger.info("=== Конвейер завершён ===")
+        logger.info("=== Конвейер завершён (ok=%s) ===", ok)
         return result
 
     def _process_queue(self) -> dict:
