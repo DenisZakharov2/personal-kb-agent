@@ -6,7 +6,10 @@ import sqlite3
 
 import pytest
 
+from kb_agent.sources.manager import SourceManager
 from kb_agent.sources.registry import SourceRegistry
+from kb_agent.sources.base import SourceConfig
+from kb_agent.storage.pending import PendingManager
 from kb_agent.storage.state import StateManager
 
 
@@ -63,3 +66,52 @@ class TestSourceRegistrySqlite:
         assert len(sources1) == 1
         assert len(sources2) == 1
         assert sources1[0].id == sources2[0].id == "tg_ch1"
+
+
+class TestPendingAffectsCollector:
+    """P1-01: pending add_source/remove_source должны реально влиять на сбор.
+
+    Потенциальный сборщик читает источники из SourceRegistry → SQLite,
+    поэтому после confirm_change(add_source) источник должен появиться в
+    реестре, а после confirm_change(remove_source) — исчезнуть.
+    """
+
+    def test_pending_add_source_visible_in_collector(self, state, config):
+        """После подтверждения add_source источник виден в реестре сборщика."""
+        pm = PendingManager(state)
+        change_id = pm.create_change(
+            action="add_source",
+            entity_type="source",
+            entity_id="yt_newchan",
+            parameters={
+                "source_id": "yt_newchan",
+                "source_type": "youtube",
+                "channel": "https://youtube.com/@newchan",
+                "enabled": True,
+            },
+        )
+        assert pm.confirm_change(change_id, revision=0) is True
+
+        manager = SourceManager(config, state)
+        ids = {s.id for s in manager.registry.list()}
+        assert "yt_newchan" in ids, f"Источник не попал в реестр сборщика: {ids}"
+
+    def test_pending_remove_source_not_in_collector(self, state, config):
+        """После подтверждения remove_source источника нет в реестре сборщика."""
+        registry = SourceRegistry(sources_path=config.sources_path, state=state)
+        registry.add(
+            SourceConfig(id="yt_gone", type="youtube", url="https://youtube.com/@gone", enabled=True)
+        )
+
+        pm = PendingManager(state)
+        change_id = pm.create_change(
+            action="remove_source",
+            entity_type="source",
+            entity_id="yt_gone",
+            parameters={"source_id": "yt_gone"},
+        )
+        assert pm.confirm_change(change_id, revision=0) is True
+
+        manager = SourceManager(config, state)
+        ids = {s.id for s in manager.registry.list()}
+        assert "yt_gone" not in ids, f"Источник всё ещё в реестре сборщика: {ids}"
