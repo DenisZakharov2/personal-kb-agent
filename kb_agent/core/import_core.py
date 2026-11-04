@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+import yaml
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -34,15 +35,29 @@ def _parse_frontmatter(content: str) -> tuple[dict, str]:
     """Извлекает YAML frontmatter и возвращает (данные, тело без frontmatter)."""
     if not content.startswith("---\n"):
         return {}, content
-    end = content.find("\n---\n", 4)
-    if end == -1:
+
+    lines = content.split("\n")
+    if lines[0] != "---":
         return {}, content
-    fm_text = content[4:end]
+
+    # Находим закрывающую строку "---"
+    fm_lines: list[str] = []
+    body_start = 1
+    for i in range(1, len(lines)):
+        if lines[i].strip() == "---":
+            body_start = i + 1
+            break
+        fm_lines.append(lines[i])
+    else:
+        # Нет закрывающего --- — не frontmatter
+        return {}, content
+
+    fm_text = "\n".join(fm_lines)
     try:
         data = yaml.safe_load(fm_text) or {}
         if not isinstance(data, dict):
             return {}, content
-        body = content[end + 5:]
+        body = "\n".join(lines[body_start:])
         return data, body
     except Exception:
         return {}, content
