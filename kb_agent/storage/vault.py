@@ -59,7 +59,7 @@ class VaultManager:
     ) -> Path:
         """Создаёт .md файл с YAML frontmatter и возвращает путь к нему.
 
-        Запись атомарная: через временный файл с subsequent replace.
+        Запись атомарная: через временный файл с последующей заменой.
         """
         folder = self._topic_folder(topic)
         file_name = f"{received_at[:10]}_{_slugify(title)}.md"

@@ -115,7 +115,8 @@ def import_core(
             )
         else:
             typer.echo(f"Всего файлов: {report.total_files}")
-            typer.echo(f"Будут импортированы: {report.imported}")
+            typer.echo(f"Импортировано: {report.imported}")
+            typer.echo(f"Пропущено (уже было): {report.skipped}")
             typer.echo(f"Ошибок: {report.errors}")
             for line in report.details:
                 typer.echo(f"  - {line}")

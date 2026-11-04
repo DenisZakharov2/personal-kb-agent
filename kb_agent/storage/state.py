@@ -1,6 +1,6 @@
 """Управление состоянием приложения в SQLite (Этап 1).
 
-Единственное изменяемое хранилище — один SQLite-файл.
+Каноническое изменяемое хранилище — один SQLite-файл; также меняются файлы vault и sources.yaml.
 Таблицы: raw_queue, notes_fts (FTS5), note_links, feedback, prompt_history, processed,
 pending_changes (Этап 4), sources (Этап 4).
 """
