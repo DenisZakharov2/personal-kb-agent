@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 import subprocess
 import tempfile
 import time
@@ -21,6 +22,20 @@ from kb_agent.utils.logger import setup_logger
 logger = setup_logger("kb_agent.sources.youtube")
 
 DEFAULT_SUB_LANGS = "ru,en"
+
+
+def _ensure_yt_dlp() -> None:
+    """Проверяет наличие внешнего бинаря yt-dlp в PATH.
+
+    Вызывается перед сбором YouTube. Если бинарный файл absent,
+    выбрасывается понятная ошибка с указанием, как установить зависимость.
+    """
+    if shutil.which("yt-dlp") is None:
+        raise RuntimeError(
+            "yt-dlp не найден в PATH. Установите необходимую зависимость: "
+            "pip install '.[youtube]' (или загрузите бинарный файл yt-dlp "
+            "и добавьте его в PATH). Без yt-dlp сбор YouTube невозможен."
+        )
 
 
 def _fetch_channel_videos(channel_url: str) -> list[dict]:
@@ -202,6 +217,7 @@ def collect_youtube_source(
     limit — максимум видео за запуск.
     """
     langs = [l.strip() for l in sub_langs.split(",") if l.strip()] or [DEFAULT_SUB_LANGS]
+    _ensure_yt_dlp()
     return _collect_one_channel(state, channel_url, langs, months, limit, source_id=source_id)
 
 
