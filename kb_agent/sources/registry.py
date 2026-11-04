@@ -9,10 +9,11 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple
 
 import yaml
 
@@ -22,6 +23,46 @@ from kb_agent.storage.state import StateManager
 from kb_agent.utils.logger import setup_logger
 
 logger = setup_logger("kb_agent.sources.registry")
+
+# Допустимые типы источников и паттерны их URL (P2-13).
+SOURCE_TYPES = ("telegram", "youtube")
+
+_TELEGRAM_URL_RE = re.compile(r"^https?://(?:www\.)?t\.me/s/[A-Za-z0-9_]+/?$")
+_YOUTUBE_URL_RE = re.compile(
+    r"^https?://(?:www\.)?youtube\.com/(?:@[A-Za-z0-9_.]+|c/[A-Za-z0-9_-]+|channel/[A-Za-z0-9_-]+)/?$"
+)
+
+
+def normalize_source(
+    source_type: str, url: str, source_id: Optional[str] = None
+) -> Tuple[str, str, str]:
+    """Нормализует и валидирует источник (P2-13).
+
+    Возвращает (source_id, url, source_type). source_id генерируется из URL,
+    если не передан явно. Выбрасывает ValueError при некорректном типе или URL.
+    """
+    if source_type not in SOURCE_TYPES:
+        raise ValueError(
+            f"Неподдерживаемый тип источника: {source_type}. Доступны: {', '.join(SOURCE_TYPES)}."
+        )
+
+    url = url.strip()
+    if source_type == "telegram":
+        if not _TELEGRAM_URL_RE.match(url):
+            raise ValueError(
+                f"Неправильный URL Telegram-канала: {url}. Ожидается https://t.me/s/<канал>."
+            )
+    else:  # youtube
+        if not _YOUTUBE_URL_RE.match(url):
+            raise ValueError(
+                f"Неправильный URL YouTube-канала: {url}. "
+                f"Ожидается https://youtube.com/@<handle> или https://youtube.com/c/<канал>."
+            )
+
+    if not source_id:
+        channel = url.rstrip("/").split("/")[-1].replace("@", "")
+        source_id = f"{'tg' if source_type == 'telegram' else 'yt'}_{channel}"
+    return source_id, url, source_type
 
 
 class SourceRegistry:
@@ -188,8 +229,20 @@ class SourceRegistry:
     # ---- Запись (할я SQLite канонически) ----
 
     def add(self, source_config: SourceConfig) -> bool:
-        """Добавляет источник. Возвращает False, если уже существует."""
+        """Добавляет источник. Возвращает False, если уже существует или некорректен."""
         self.load()
+        # Нормализуем и валидируем тип + URL (P2-13).
+        try:
+            norm_id, norm_url, norm_type = normalize_source(
+                source_config.type, source_config.url, source_config.id
+            )
+        except ValueError as exc:
+            logger.error("Некорректный источник %s: %s", source_config.id, exc)
+            return False
+        source_config.id = norm_id
+        source_config.url = norm_url
+        source_config.type = norm_type
+
         if source_config.id in self._sources:
             logger.warning("Источник %s уже существует", source_config.id)
             return False
