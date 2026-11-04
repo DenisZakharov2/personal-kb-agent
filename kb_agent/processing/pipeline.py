@@ -21,7 +21,7 @@ from kb_agent.processing.llm_client import LLMClient
 from kb_agent.sources.manager import run_collection
 from kb_agent.storage.catalog import CatalogGenerator
 from kb_agent.storage.state import StateManager
-from kb_agent.storage.vault import VaultManager
+from kb_agent.storage.vault import VaultManager, atomic_write_text
 from kb_agent.utils.logger import setup_logger
 
 logger = setup_logger("kb_agent.processing.pipeline")
@@ -251,7 +251,7 @@ class Pipeline:
         lines.append(f"- Ошибок: {processing['failed']}")
         lines.append("")
 
-        digest_path.write_text("\n".join(lines), encoding="utf-8")
+        atomic_write_text(digest_path, "\n".join(lines), backup=True)
         return digest_path
 
     def _extract_tags(self, text: str) -> list[str]:

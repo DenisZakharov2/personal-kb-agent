@@ -11,7 +11,7 @@ from typing import Optional
 
 import yaml
 
-from kb_agent.storage.vault import VaultManager
+from kb_agent.storage.vault import VaultManager, atomic_write_text
 from kb_agent.utils.logger import setup_logger
 
 logger = setup_logger("kb_agent.storage.catalog")
@@ -31,7 +31,7 @@ class CatalogGenerator:
         self.vault = vault_manager
 
     @staticmethod
-    def _parse_frontmatter(content: str) -> dict:
+    def _parse_frontmatter(content: str, note_path: Optional[Path] = None) -> dict:
         if not content.startswith("---\n"):
             return {}
         end = content.find("\n---\n", 4)
@@ -40,7 +40,14 @@ class CatalogGenerator:
         fm_text = content[4:end]
         try:
             return yaml.safe_load(fm_text) or {}
-        except Exception:
+        except Exception as exc:  # noqa: BLE001
+            # Не молча скрываем битый frontmatter — предупреждаем, но не
+            # прерываем генерацию каталога из-за одной заметки (P2-09).
+            logger.warning(
+                "Не удалось разобрать frontmatter %s: %s",
+                note_path or "<неизвестно>",
+                exc,
+            )
             return {}
 
     def generate(self, output_path: Optional[Path] = None) -> Path:
@@ -61,7 +68,7 @@ class CatalogGenerator:
         by_topic: dict[str, list[tuple[str, str, str]]] = {}  # topic -> [(date, title, rel_path)]
         for note_path in notes:
             content = note_path.read_text(encoding="utf-8")
-            fm = self._parse_frontmatter(content)
+            fm = self._parse_frontmatter(content, note_path)
             topic = fm.get("topic", "Общее")
             title = fm.get("title", note_path.stem)
             date = fm.get("date_saved", "")
@@ -86,6 +93,6 @@ class CatalogGenerator:
                 lines.append(f"- [{title}]({rel_path}) — {date}")
             lines.append("")
 
-        output_path.write_text("\n".join(lines), encoding="utf-8")
+        atomic_write_text(output_path, "\n".join(lines), backup=True)
         logger.info("Каталог сгенерирован: %s (%s заметок)", output_path, len(notes))
         return output_path
