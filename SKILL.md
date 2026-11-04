@@ -48,14 +48,13 @@ kb-agent mcp-serve
 ### Write-инструменты (требуют подтверждения человеком)
 
 Каждый вызов создаёт pending-запрос и возвращает `change_id`. Изменение применяется только
-после вызова `kb_confirm_change(change_id)` (или `kb-agent confirm <change_id>`).
+после явного человеческого подтверждения через `kb-agent confirm <change_id>`.
 
 - `kb_add_source` — `source_type` (`telegram` | `youtube`), `channel`, `enabled`
 - `kb_remove_source` — `source_id`
 - `kb_enable_source` — `source_id`, `enabled`
 - `kb_update_profile` — `updates` (объект с полями профиля)
 - `kb_revert_prompt` — `prompt_name`, `version` (необязательно)
-- `kb_confirm_change` — `change_id`
 
 ## Пример использования (Cursor / Claude Code)
 Добавьте в `.cursor/mcp.json`:
@@ -72,7 +71,7 @@ kb-agent mcp-serve
 
 ## Ограничения первой версии
 - Read-only инструменты работают сразу, write-инструменты — только через pending-подтверждение
-- Изменения профиля и источников применяются к `sources.yaml` / `user_profile.yaml` после `kb_confirm_change`
+- Изменения профиля и источников применяются после `kb-agent confirm <change_id>` (через CLI, модель не может подтвердить изменение самостоятельно)
 - Веб-интерфейс не используется
 
 ## Репозиторий

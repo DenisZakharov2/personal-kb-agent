@@ -16,7 +16,7 @@ logger = setup_logger("kb_agent.core.update")
 
 @dataclass
 class DuplicatePair:
-    """Пара похожих заметок, Candidates для слияния."""
+    """Пара похожих заметок, кандидаты на слияние."""
 
     note_id_1: str
     title_1: str

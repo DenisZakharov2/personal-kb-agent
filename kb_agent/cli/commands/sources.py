@@ -207,7 +207,7 @@ def sources_remove(
         state.close()
 
 
-def _toggle_source(source_id: str, enabled: bool, action_word: str, json_output: bool) -> None:
+def _toggle_source(source_id: str, enabled: bool, json_output: bool) -> None:
     """Включить или выключить источник в каноническом хранилище (SQLite)."""
     config = load_config()
     state = StateManager(config.db_path)
@@ -265,7 +265,7 @@ def sources_enable(
     ),
 ) -> None:
     """Включить источник в sources.yaml."""
-    _toggle_source(source_id, True, "включение", json_output)
+    _toggle_source(source_id, True, json_output)
 
 
 @app.command("disable")
@@ -279,4 +279,4 @@ def sources_disable(
     ),
 ) -> None:
     """Выключить источник в sources.yaml."""
-    _toggle_source(source_id, False, "выключение", json_output)
+    _toggle_source(source_id, False, json_output)
