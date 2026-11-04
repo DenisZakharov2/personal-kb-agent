@@ -280,6 +280,30 @@ _SCHEMA = [
         );
         """,
     ),
+    (
+        15,
+        """
+        ALTER TABLE pending_changes ADD COLUMN diff TEXT;
+        """,
+    ),
+    (
+        16,
+        """
+        ALTER TABLE pending_changes ADD COLUMN created_by TEXT;
+        """,
+    ),
+    (
+        17,
+        """
+        ALTER TABLE notes ADD COLUMN is_private INTEGER NOT NULL DEFAULT 0;
+        """,
+    ),
+    (
+        18,
+        """
+        ALTER TABLE sources ADD COLUMN is_private INTEGER NOT NULL DEFAULT 0;
+        """,
+    ),
 ]
 
 SCHEMA_VERSION = max(v for v, _ in _SCHEMA)
@@ -492,6 +516,7 @@ class StateManager:
         file_path: Optional[str] = None,
         content_hash: Optional[str] = None,
         revision: int = 1,
+        is_private: int = 0,
         conn: Optional[sqlite3.Connection] = None,
     ) -> None:
         """Индексирует заметку в обе таблицы (notes + notes_fts) в одной транзакции.
@@ -508,8 +533,8 @@ class StateManager:
             c.execute(
                 """
                 INSERT INTO notes (note_id, title, tags, topic, source_id, external_id, canonical_url,
-                                   file_path, content_hash, revision, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+                                   file_path, content_hash, revision, is_private, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
                 ON CONFLICT(note_id) DO UPDATE SET
                     title = excluded.title,
                     tags = excluded.tags,
@@ -520,6 +545,7 @@ class StateManager:
                     file_path = excluded.file_path,
                     content_hash = excluded.content_hash,
                     revision = notes.revision + 1,
+                    is_private = excluded.is_private,
                     updated_at = datetime('now')
                 """,
                 (
@@ -533,6 +559,7 @@ class StateManager:
                     file_path,
                     content_hash,
                     revision,
+                    is_private,
                 ),
             )
             c.execute("DELETE FROM notes_fts WHERE note_id = ?", (note_id,))
@@ -600,7 +627,7 @@ class StateManager:
                 """
                 SELECT f.note_id, f.title, f.tags, f.topic, f.content, f.rank,
                        n.canonical_url, n.source_id, n.external_id, n.file_path,
-                       n.content_hash, n.revision
+                       n.content_hash, n.revision, n.is_private
                 FROM notes_fts f
                 LEFT JOIN notes n ON n.note_id = f.note_id
                 WHERE notes_fts MATCH ?
@@ -626,7 +653,7 @@ class StateManager:
             """
             SELECT n.note_id, n.title, n.tags, n.topic, n.source_id, n.external_id,
                    n.canonical_url, n.file_path, n.content_hash, n.revision,
-                   n.created_at, n.updated_at, f.content
+                   n.created_at, n.updated_at, n.is_private, f.content
             FROM notes n
             LEFT JOIN notes_fts f ON f.note_id = n.note_id
             WHERE n.note_id = ?

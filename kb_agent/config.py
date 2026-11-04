@@ -97,7 +97,9 @@ class AppConfig(BaseModel):
     prompts_dir: Path = Field(default=DEFAULT_PROMPTS_DIR, description="Каталог с промптами")
 
     # LLM
-    llm_provider: str = Field(default="openai", description="Провайдер: openai, kimi, anthropic, ollama, openrouter, custom")
+    llm_provider: str = Field(
+        default="openai", description="Провайдер: openai, kimi, anthropic, ollama, openrouter, custom"
+    )
     openai_api_key: Optional[str] = Field(default=None, description="API-ключ LLM-провайдера")
     openai_base_url: str = Field(default="https://api.openai.com/v1", description="Базовый URL API провайдера")
     openai_model: str = Field(default="gpt-4o-mini", description="Модель LLM")
@@ -107,6 +109,25 @@ class AppConfig(BaseModel):
     llm_max_retries: int = Field(
         default=2,
         description="Число повторов запроса при 429/5xx и сетевых ошибках",
+    )
+
+    # Режим локальной обработки (6.2).
+    # При local_processing_mode=True данные не уходят за пределы локального
+    # Ollama/локальной модели. Внешние провайдеры (OpenAI, Kimi, OpenRouter)
+    # блокируются.
+    local_processing_mode: bool = Field(
+        default=False,
+        description="Режим локальной обработки: данные не отправляются внешнему LLM",
+    )
+
+    # Redaction (6.2): поля и источники, исключаемые из отправки внешнему LLM.
+    redact_fields: str = Field(
+        default="",
+        description="Список полей для редакции через запятую (например, email,phone,canonical_url)",
+    )
+    redact_sources: str = Field(
+        default="",
+        description="Список source_id для редакции через запятую (исключаются из отправки внешнему LLM)",
     )
 
     # Параметры сбора (из .env / переменных окружения)
@@ -204,6 +225,9 @@ def load_config(env_file: Optional[str] = None) -> AppConfig:
         "KB_YT_MONTHS": "yt_months",
         "KB_YT_SUB_LANGS": "yt_sub_langs",
         "KB_LIMIT": "limit",
+        "KB_LOCAL_PROCESSING_MODE": "local_processing_mode",
+        "KB_REDACT_FIELDS": "redact_fields",
+        "KB_REDACT_SOURCES": "redact_sources",
     }
 
     kwargs: dict[str, object] = {}

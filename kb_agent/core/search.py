@@ -40,6 +40,9 @@ class SearchResult:
     file_path: Optional[str] = None
     content_hash: Optional[str] = None
     revision: Optional[int] = None
+    # Метка приватности / чувствительности (6.2)
+    is_private: bool = False
+    sensitivity: str = "public"
 
 
 def _make_snippet(content: str, query_terms: list[str], window: int = SNIPPET_WINDOW) -> str:
@@ -119,6 +122,8 @@ class SearchEngine:
                     file_path=row.get("file_path"),
                     content_hash=row.get("content_hash"),
                     revision=row.get("revision"),
+                    is_private=bool(row.get("is_private", 0)),
+                    sensitivity="private" if row.get("is_private") else "public",
                 )
             )
 

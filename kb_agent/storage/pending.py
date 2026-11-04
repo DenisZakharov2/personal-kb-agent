@@ -47,6 +47,9 @@ class PendingManager:
         entity_type: str,
         entity_id: str,
         parameters: dict,
+        *,
+        diff: Optional[str] = None,
+        created_by: Optional[str] = None,
         ttl_seconds: Optional[int] = None,
     ) -> str:
         """Создаёт pending-запрос. Возвращает change_id.
@@ -54,6 +57,11 @@ class PendingManager:
         ``ttl_seconds`` задаёт срок жизни запроса: после истечения
         ``expires_at`` статус переходит в ``expired`` (см. ``expire_pending``)
         и предложение требует пересоздания.
+
+        ``diff`` — текстовое представление предлагаемого изменения (для аудита и
+        проверки при подтверждении). ``created_by`` — автор предложения.
+        ``payload_hash`` (хранится как ``content_hash``) вычисляется из
+        параметров при создании и сверяется при подтверждении.
         """
         if action not in ALLOWED_ACTIONS:
             raise ValueError(f"Недопустимое действие: {action}")
@@ -66,12 +74,21 @@ class PendingManager:
             expires_at = (
                 datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds)
             ).isoformat()
+        # payload_hash — хеш параметров предложения, вычисляется при создании
+        # и сверяется при подтверждении (защита от подмены параметров между
+        # созданием и подтверждением).
+        payload_hash = hashlib.sha256(
+            json.dumps(parameters, sort_keys=True, ensure_ascii=False).encode(
+                "utf-8"
+            )
+        ).hexdigest()
         conn = self.state.connect()
         conn.execute(
             """
             INSERT INTO pending_changes
-                (change_id, action, entity_type, entity_id, parameters, status, revision, expires_at)
-            VALUES (?, ?, ?, ?, ?, 'pending', 0, ?)
+                (change_id, action, entity_type, entity_id, parameters, status,
+                 revision, expires_at, diff, created_by, content_hash)
+            VALUES (?, ?, ?, ?, ?, 'pending', 0, ?, ?, ?, ?)
             """,
             (
                 change_id,
@@ -80,16 +97,22 @@ class PendingManager:
                 entity_id,
                 json.dumps(parameters, ensure_ascii=False),
                 expires_at,
+                diff,
+                created_by,
+                payload_hash,
             ),
         )
         conn.commit()
         logger.info(
-            "Создан pending-запрос %s: action=%s entity=%s/%s revision=0 ttl=%s",
+            "Создан pending-запрос %s: action=%s entity=%s/%s revision=0 ttl=%s "
+            "payload_hash=%s created_by=%s",
             change_id,
             action,
             entity_type,
             entity_id,
             ttl_seconds,
+            payload_hash[:12],
+            created_by,
         )
         return change_id
 
@@ -120,13 +143,14 @@ class PendingManager:
     ) -> bool:
         """Подтверждает и применяет pending-запрос с оптимистичной блокировкой.
 
-        Проверка ``status = 'pending'`` и совпадения ``revision`` выполняется
-        атомарно в одной транзакции ``BEGIN IMMEDIATE``. При несовпадении
-        ревизии (конфликт параллельных подтверждений) запрос не применяется и
-        метод возвращает False.
+        Проверка ``status = 'pending'``, совпадения ``revision`` и
+        ``payload_hash`` (content_hash) выполняется атомарно в одной
+        транзакции ``BEGIN IMMEDIATE``. При несовпадении ревизии или хеша
+        параметров запрос не применяется и метод возвращает False.
 
         Возвращает True при успешном применении, False — при ошибке, если
-        запрос не найден, уже не в статусе pending или ревизия не совпала.
+        запрос не найден, уже не в статусе pending, ревизия не совпала или
+        параметры были изменены после создания (payload_hash не совпал).
         """
         conn = self.state.connect()
         conn.execute("BEGIN IMMEDIATE")
@@ -155,10 +179,26 @@ class PendingManager:
                 )
                 return False
 
+            # Проверяем payload_hash: параметры не должны меняться между
+            # созданием предложения и его подтверждением.
+            parameters = json.loads(change["parameters"] or "{}")
+            current_hash = hashlib.sha256(
+                json.dumps(parameters, sort_keys=True, ensure_ascii=False).encode(
+                    "utf-8"
+                )
+            ).hexdigest()
+            stored_hash = change["content_hash"] or ""
+            if stored_hash and current_hash != stored_hash:
+                conn.rollback()
+                logger.warning(
+                    "Конфликт payload_hash для %s: параметры изменены после "
+                    "создания предложения", change_id
+                )
+                return False
+
             success = self._apply_change(change, conn=conn)
 
             now = datetime.now(timezone.utc).isoformat()
-            parameters = json.loads(change["parameters"] or "{}")
             content_hash = hashlib.sha256(
                 json.dumps(parameters, sort_keys=True, ensure_ascii=False).encode(
                     "utf-8"

@@ -9,6 +9,8 @@
 from __future__ import annotations
 
 import difflib
+import os
+import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -20,6 +22,17 @@ from kb_agent.storage.state import StateManager
 from kb_agent.utils.logger import setup_logger
 
 logger = setup_logger("kb_agent.core.self_improvement")
+
+# 6.3: строгий allowlist конфигурационных файлов, доступных для apply_config_proposal.
+# target_name должен быть одним из этих путей (относительно корня проекта или
+# абсолютный внутри data_dir). Произвольная запись вне списка запрещается.
+ALLOWED_CONFIG_PATHS = {
+    "config/sources.example.yaml",
+    "config/prompts/agent_prompt.md",
+    "data/sources.yaml",
+    "data/user_profile.yaml",
+    "data/kb_agent.log",
+}
 
 
 @dataclass
@@ -255,14 +268,43 @@ class SelfImprovementEngine:
         new_value: str,
         confirmed_by: str = "user",
     ) -> bool:
-        """Применить предложение по изменению конфигурационного YAML-файла."""
+        """Применить предложение по изменению конфигурационного YAML-файла.
+
+        6.3: путь ограничивается строгим allowlist конфигурационных файлов,
+        запись выполняется атомарно (временный файл + os.replace), diff
+        проверяется перед записью.
+        """
         if proposal.status != "proposed":
             logger.warning(
                 "Предложение %s уже имеет статус %s", proposal.proposal_id, proposal.status
             )
             return False
 
-        # Тестовый набор для конфигурационных изменений пока пропускается
+        # 6.3: проверка allowlist пути
+        target = Path(proposal.target_name)
+        target_str = str(target)
+        # Нормализуем путь: приводим к относительному от PROJECT_ROOT если возможно
+        from kb_agent.config import PROJECT_ROOT
+
+        try:
+            rel_target = target.resolve().relative_to(PROJECT_ROOT.resolve())
+            rel_target_str = str(rel_target)
+        except ValueError:
+            rel_target_str = target_str
+
+        allowed = (
+            target_str in ALLOWED_CONFIG_PATHS
+            or rel_target_str in ALLOWED_CONFIG_PATHS
+        )
+        if not allowed:
+            logger.error(
+                "Путь конфига не в allowlist: %s (разрешены: %s)",
+                proposal.target_name,
+                ", ".join(sorted(ALLOWED_CONFIG_PATHS)),
+            )
+            return False
+
+        # Тестовый набор для конфигурационных изменений
         test_passed = self._run_test_suite(proposal)
         proposal.test_passed = test_passed
         if not test_passed:
@@ -270,10 +312,32 @@ class SelfImprovementEngine:
             proposal.status = "failed"
             return False
 
+        # Проверка diff: предложение должно содержать реальные изменения
+        if not proposal.diff or "(изменений нет)" in proposal.diff:
+            logger.warning(
+                "Предложение %s не содержит diff, применение отменено",
+                proposal.proposal_id,
+            )
+            self.state.update_proposal(proposal.proposal_id, status="failed", test_passed=0)
+            proposal.status = "failed"
+            return False
+
         now = datetime.now(timezone.utc).isoformat()
-        path = Path(proposal.target_name)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(new_value, encoding="utf-8")
+
+        # 6.3: атомарная запись — во временный файл в той же директории,
+        # затем os.replace. Получатель видит либо старый файл, либо новый целиком.
+        target.parent.mkdir(parents=True, exist_ok=True)
+        tmp = target.with_name(target.name + ".tmp")
+        try:
+            tmp.write_text(new_value, encoding="utf-8")
+            os.replace(tmp, target)
+        except Exception:
+            # Удаляем временный файл при ошибке
+            try:
+                tmp.unlink(missing_ok=True)  # type: ignore[attr-defined]
+            except OSError:
+                pass
+            raise
 
         self.state.update_proposal(
             proposal.proposal_id,
@@ -287,7 +351,7 @@ class SelfImprovementEngine:
         proposal.applied_at = now
         proposal.confirmed_at = now
         logger.info(
-            "Конфиг %s обновлён (подтвердил %s)", proposal.target_name, confirmed_by,
+            "Конфиг %s обновлён атомарно (подтвердил %s)", proposal.target_name, confirmed_by,
         )
         return True
 

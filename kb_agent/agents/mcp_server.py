@@ -44,6 +44,44 @@ logger = setup_logger("kb_agent.mcp_server")
 app = Server("kb-agent")
 
 # ---------------------------------------------------------------------------
+# Allowlist источников и URL (6.1).
+#
+# Только эти хосты разрешаются для добавления через MCP. yt-dlp поддерживает
+# множество протоколов и сайтов, поэтому явно ограничиваем circle доверия
+# conocidosими Telegram/YouTube доменами.
+# ---------------------------------------------------------------------------
+
+ALLOWED_HOSTS = {
+    "t.me",
+    "www.t.me",
+    "telegram.me",
+    "www.telegram.me",
+    "youtube.com",
+    "www.youtube.com",
+    "youtu.be",
+    "www.youtu.be",
+}
+
+ALLOWED_SOURCE_TYPES = {"telegram", "youtube"}
+
+
+def _is_url_allowed(url: str) -> bool:
+    """Проверяет, что хост URL входит в allowlist (6.1)."""
+    from urllib.parse import urlparse
+
+    try:
+        parsed = urlparse(url.strip())
+    except ValueError:
+        return False
+    host = (parsed.hostname or "").lower()
+    if not host:
+        return False
+    if parsed.scheme not in ("http", "https"):
+        return False
+    return host in ALLOWED_HOSTS or host.endswith((".t.me", ".youtube.com", ".youtu.be"))
+
+
+# ---------------------------------------------------------------------------
 # Pydantic-модели для структурированного ввода/вывода (P2-12)
 # ---------------------------------------------------------------------------
 
@@ -63,6 +101,20 @@ class SearchItem(BaseModel):
     tags: list[str] = Field(default_factory=list, description="Теги")
     revision: Optional[int] = Field(default=None, description="Ревизия заметки")
     content_hash: Optional[str] = Field(default=None, description="Хэш содержимого")
+    # Метаданные происхождения (6.1)
+    untrusted_content: bool = Field(
+        default=False,
+        description="Признак недоверенного контента (источник не из allowlist или метка untrusted)",
+    )
+    # Метка чувствительности (6.2)
+    is_private: bool = Field(
+        default=False,
+        description="Признак приватной заметки — не выдаётся внешнему агенту без проверки",
+    )
+    sensitivity: str = Field(
+        default="public",
+        description="Метка чувствительности: public, internal, private, secret",
+    )
 
 
 class SearchOutput(BaseModel):
@@ -87,6 +139,20 @@ class NoteOutput(BaseModel):
     file_path: Optional[str] = None
     content_hash: Optional[str] = None
     revision: Optional[int] = None
+    # Метаданные происхождения (6.1)
+    untrusted_content: bool = Field(
+        default=False,
+        description="Признак недоверенного контента",
+    )
+    # Метка чувствительности (6.2)
+    is_private: bool = Field(
+        default=False,
+        description="Признак приватной заметки",
+    )
+    sensitivity: str = Field(
+        default="public",
+        description="Метка чувствительности: public, internal, private, secret",
+    )
 
 
 class InsightOutput(BaseModel):
@@ -352,6 +418,15 @@ async def handle_call_tool(name: str, arguments: Optional[dict[str, Any]]) -> An
                         topic=r.topic or "",
                         tags=[t.strip() for t in (r.tags or "").split(",") if t.strip()],
                         revision=r.revision,
+                        # Метаданные происхождения (6.1)
+                        untrusted_content=not _is_url_allowed(
+                            r.canonical_url or ""
+                        )
+                        if r.canonical_url
+                        else True,
+                        # Метка чувствительности (6.2)
+                        is_private=bool(r.is_private),
+                        sensitivity=r.sensitivity,
                     )
                 )
 
@@ -390,6 +465,13 @@ async def handle_call_tool(name: str, arguments: Optional[dict[str, Any]]) -> An
             note = state.get_note(note_id)
             if note is None:
                 return _error_result("not_found", f"Заметка с ID {note_id} не найдена")
+            # 6.2: приватные заметки не выдаются внешнему агенту через kb_get_note
+            if bool(note.get("is_private", 0)):
+                return _error_result(
+                    "forbidden",
+                    f"Заметка {note_id} помечена как приватная и недоступна "
+                    "внешнему агенту через MCP.",
+                )
             note_output = NoteOutput(
                 note_id=note["note_id"],
                 title=note["title"] or "Без названия",
@@ -402,6 +484,15 @@ async def handle_call_tool(name: str, arguments: Optional[dict[str, Any]]) -> An
                 file_path=note.get("file_path"),
                 content_hash=note.get("content_hash"),
                 revision=note.get("revision"),
+                # Метаданные происхождения (6.1)
+                untrusted_content=not _is_url_allowed(
+                    note.get("canonical_url") or ""
+                )
+                if note.get("canonical_url")
+                else True,
+                # Метка чувствительности (6.2)
+                is_private=bool(note.get("is_private", 0)),
+                sensitivity="private" if note.get("is_private") else "public",
             )
             lines = [
                 f"## Заметка: {note_output.title}",
@@ -447,6 +538,13 @@ async def handle_call_tool(name: str, arguments: Optional[dict[str, Any]]) -> An
                 source_id, channel, source_type = normalize_source(source_type, channel)
             except ValueError as exc:
                 return _error_result("invalid_argument", str(exc))
+            # 6.1: allowlist хостов — только доверенные домены
+            if not _is_url_allowed(channel):
+                return _error_result(
+                    "invalid_argument",
+                    f"URL не в allowlist источников: {channel}. "
+                    f"Разрешённые хосты: {', '.join(sorted(ALLOWED_HOSTS))}",
+                )
 
             pm = PendingManager(state)
             change_id = pm.create_change(
