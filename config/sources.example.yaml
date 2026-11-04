@@ -1,0 +1,28 @@
+# Реестр источников базы знаний ТГК.
+# Единственный источник истины для конфигурации источников (только YAML, не JSON и не дублирование в SQLite).
+# При развёртывании копируется в data/sources.yaml.
+# Состояние приложения (очередь, заметки, связи, обратная связь, промпты) хранится только в SQLite (data/state.db).
+
+version: 1
+
+sources:
+  - id: tg_ragnarokzone
+    type: telegram
+    url: https://t.me/s/ragnarokzone
+    enabled: true
+    last_checked: null
+    last_updated: null
+
+  - id: tg_paragonzone
+    type: telegram
+    url: https://t.me/s/paragonzone
+    enabled: false
+    last_checked: null
+    last_updated: null
+
+  - id: yt_example_channel
+    type: youtube
+    url: https://youtube.com/@example_channel
+    enabled: true
+    last_checked: null
+    last_updated: null

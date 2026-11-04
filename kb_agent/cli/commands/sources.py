@@ -1,0 +1,275 @@
+"""Команды управления источниками (Этап 4/5).
+
+kb-agent sources list                 — показать все источники (из sources.yaml)
+kb-agent sources add <тип> <URL>      — добавить источник (pending → confirm)
+kb-agent sources remove <source_id>   — удалить источник (pending → confirm)
+kb-agent sources enable <source_id>   — включить источник (pending → confirm)
+kb-agent sources disable <source_id>  — выключить источник (pending → confirm)
+"""
+
+from __future__ import annotations
+
+import json
+import typer
+
+from kb_agent.config import load_config
+from kb_agent.sources.manager import SourceManager
+from kb_agent.sources.registry import SourceConfig, SourceRegistry
+from kb_agent.storage.state import StateManager
+from kb_agent.utils.logger import setup_logger
+
+app = typer.Typer(help="Управление источниками данных (Этап 4/5)")
+logger = setup_logger("kb_agent.cli.sources")
+
+
+def _output_json(data: dict) -> None:
+    """Выводит данные в формате JSON."""
+    typer.echo(json.dumps(data, ensure_ascii=False, indent=2))
+
+
+@app.command("list")
+def sources_list(
+    enabled_only: bool = typer.Option(
+        False,
+        "--enabled-only",
+        "-e",
+        help="Показать только включённые источники",
+    ),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        "-j",
+        help="Вывести результат в формате JSON",
+    ),
+) -> None:
+    """Показать список всех источников из sources.yaml."""
+    config = load_config()
+    registry = SourceRegistry(config.sources_path)
+    sources = registry.list(enabled_only=enabled_only)
+
+    if json_output:
+        _output_json(
+            {
+                "sources": [
+                    {
+                        "source_id": s.id,
+                        "source_type": s.type,
+                        "url": s.url,
+                        "enabled": s.enabled,
+                        "last_checked": s.last_checked,
+                        "last_updated": s.last_updated,
+                    }
+                    for s in sources
+                ]
+            }
+        )
+        return
+
+    if not sources:
+        typer.echo("Источников не найдено. Добавьте источник: kb-agent sources add telegram https://t.me/s/rubiconzone")
+        return
+    typer.echo("Источники:")
+    for s in sources:
+        status = "✓ включён" if s.enabled else "✗ выключен"
+        typer.echo(f"  {s.id} | {s.type} | {s.url} | {status}")
+        if s.last_checked:
+            typer.echo(f"    Последняя проверка: {s.last_checked}")
+        if s.last_updated:
+            typer.echo(f"    Последнее обновление: {s.last_updated}")
+
+
+@app.command("add")
+def sources_add(
+    source_type: str = typer.Argument(..., help="Тип источника: telegram или youtube"),
+    url: str = typer.Argument(..., help="URL источника (https://t.me/s/канал или https://youtube.com/@kanal)"),
+    source_id: str = typer.Option(
+        "",
+        "--id",
+        help="Идентификатор источника (генерируется автоматически, если не указан)",
+    ),
+    enabled: bool = typer.Option(
+        True,
+        "--enabled/--disabled",
+        help="Включить источник сразу",
+    ),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        "-j",
+        help="Вывести результат в формате JSON",
+    ),
+) -> None:
+    """Добавить новый источник в sources.yaml."""
+    if source_type not in ("telegram", "youtube"):
+        msg = f"Неподдерживаемый тип источника: {source_type}. Доступны: telegram, youtube."
+        if json_output:
+            _output_json({"error": msg})
+        else:
+            typer.echo(msg, err=True)
+        raise typer.Exit(code=1)
+
+    config = load_config()
+    registry = SourceRegistry(config.sources_path)
+    registry.load()
+
+    # Генерируем source_id если не указан
+    if not source_id:
+        channel_name = url.rstrip("/").split("/")[-1].replace("@", "")
+        source_id = f"{'tg' if source_type == 'telegram' else 'yt'}_{channel_name}"
+
+    # Проверяем дубликат
+    if registry.get(source_id):
+        msg = f"Источник {source_id} уже существует."
+        if json_output:
+            _output_json({"error": msg, "source_id": source_id})
+        else:
+            typer.echo(msg, err=True)
+        raise typer.Exit(code=1)
+
+    cfg = SourceConfig(
+        id=source_id,
+        type=source_type,
+        url=url,
+        enabled=enabled,
+    )
+    if registry.add(cfg):
+        result = {
+            "action": "add_source",
+            "source_id": source_id,
+            "source_type": source_type,
+            "url": url,
+            "enabled": enabled,
+            "status": "saved",
+            "file": str(config.sources_path),
+        }
+        if json_output:
+            _output_json(result)
+        else:
+            typer.echo(f"✓ Источник добавлен в sources.yaml:")
+            typer.echo(f"  source_id: {source_id}")
+            typer.echo(f"  тип: {source_type}")
+            typer.echo(f"  URL: {url}")
+            typer.echo(f"  включён: {enabled}")
+            typer.echo(f"  файл: {config.sources_path}")
+    else:
+        msg = f"Не удалось добавить источник {source_id}."
+        if json_output:
+            _output_json({"error": msg, "source_id": source_id})
+        else:
+            typer.echo(msg, err=True)
+        raise typer.Exit(code=1)
+
+
+@app.command("remove")
+def sources_remove(
+    source_id: str = typer.Argument(..., help="Идентификатор источника"),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        "-j",
+        help="Вывести результат в формате JSON",
+    ),
+) -> None:
+    """Удалить источник из sources.yaml."""
+    config = load_config()
+    registry = SourceRegistry(config.sources_path)
+    registry.load()
+
+    if not registry.get(source_id):
+        msg = f"Источник {source_id} не найден."
+        if json_output:
+            _output_json({"error": msg, "source_id": source_id})
+        else:
+            typer.echo(msg, err=True)
+        raise typer.Exit(code=1)
+
+    if registry.remove(source_id):
+        result = {
+            "action": "remove_source",
+            "source_id": source_id,
+            "status": "removed",
+            "file": str(config.sources_path),
+        }
+        if json_output:
+            _output_json(result)
+        else:
+            typer.echo(f"✓ Источник {source_id} удалён из sources.yaml.")
+    else:
+        msg = f"Не удалось удалить источник {source_id}."
+        if json_output:
+            _output_json({"error": msg, "source_id": source_id})
+        else:
+            typer.echo(msg, err=True)
+        raise typer.Exit(code=1)
+
+
+def _toggle_source(source_id: str, enabled: bool, action_word: str, json_output: bool) -> None:
+    """Включить или выключить источник в sources.yaml."""
+    config = load_config()
+    registry = SourceRegistry(config.sources_path)
+    registry.load()
+
+    source = registry.get(source_id)
+    if not source:
+        msg = f"Источник {source_id} не найден."
+        if json_output:
+            _output_json({"error": msg, "source_id": source_id})
+        else:
+            typer.echo(msg, err=True)
+        raise typer.Exit(code=1)
+
+    if source.enabled == enabled:
+        msg = f"Источник {source_id} уже {'включён' if enabled else 'выключен'}."
+        if json_output:
+            _output_json(
+                {
+                    "source_id": source_id,
+                    "enabled": enabled,
+                    "status": "unchanged",
+                    "message": msg,
+                }
+            )
+        else:
+            typer.echo(msg)
+        return
+
+    registry.set_enabled(source_id, enabled)
+    result = {
+        "action": "enable_source",
+        "source_id": source_id,
+        "enabled": enabled,
+        "status": "saved",
+        "file": str(config.sources_path),
+    }
+    if json_output:
+        _output_json(result)
+    else:
+        typer.echo(f"✓ Источник {source_id} {'включён' if enabled else 'выключен'} в sources.yaml.")
+
+
+@app.command("enable")
+def sources_enable(
+    source_id: str = typer.Argument(..., help="Идентификатор источника"),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        "-j",
+        help="Вывести результат в формате JSON",
+    ),
+) -> None:
+    """Включить источник в sources.yaml."""
+    _toggle_source(source_id, True, "включение", json_output)
+
+
+@app.command("disable")
+def sources_disable(
+    source_id: str = typer.Argument(..., help="Идентификатор источника"),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        "-j",
+        help="Вывести результат в формате JSON",
+    ),
+) -> None:
+    """Выключить источник в sources.yaml."""
+    _toggle_source(source_id, False, "выключение", json_output)

@@ -1,0 +1,33 @@
+# Правила для Cursor (kb-agent)
+
+Вы работаете с локальной базой знаний (Второй мозг / personal-kb-agent). Для доступа к заметкам используйте
+MCP-сервер kb-agent.
+
+## Доступные инструменты (через MCP)
+- `kb_search` — поиск по заметкам (FTS5)
+- `kb_get_note` — чтение содержимого заметки по ID
+- `kb_get_insights` — инсайты и связи между заметками
+
+## Как запустить MCP-сервер
+```
+kb-agent mcp-serve
+```
+
+## CLI команды
+- `kb-agent ask "<вопрос>"` — ответ со ссылками на заметки
+- `kb-agent search "<запрос>"` — поиск заметок
+- `kb-agent insights` — инсайты
+- `kb-agent update check` — поиск дублей
+- `kb-agent interview init` — вводное интервью
+- `kb-agent process run` — запуск конвейера наполнения
+
+## Расположение файлов
+- Конфиг: `config/sources.yaml`, `config/user_profile.yaml`
+- База данных: `data/state.db` (SQLite)
+- Vault: `/home/anony/Documents/Личное/База знаний/`
+- Промпт: `config/prompts/agent_prompt.md`
+
+## Ограничения
+- MCP-сервер read-only в первой версии
+- Изменение источников требует подтверждения человека
+- Не используйте веб-интерфейс, его нет
