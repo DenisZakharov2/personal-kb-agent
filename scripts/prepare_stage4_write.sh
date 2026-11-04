@@ -15,7 +15,7 @@ echo "=== Подготовка к новой сессии: write-операци�
 
 # 1. Проверка окружения
 if [ ! -d ".venv" ]; then
-    echo "ОШИБКА: виртуальное окружение .venv не найдено. Запустите scripts/legacy/init_stage1.sh сначала." >&2
+    echo "ОШИБКА: виртуальное окружение .venv не найдено. Создайте его: python3 -m venv .venv && .venv/bin/pip install -e ." >&2
     exit 1
 fi
 
