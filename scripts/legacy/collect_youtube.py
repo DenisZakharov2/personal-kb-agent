@@ -66,8 +66,18 @@ def parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
+def _work_dir() -> Path:
+    """Каталог для _queue.jsonl и служебных файлов.
+
+    KB_QUEUE_DIR позволяет запускать скрипт из другого места (используется
+    обёртками scripts/collect_*.py для совместимости со старым workflow).
+    """
+    override = os.getenv("KB_QUEUE_DIR", "").strip()
+    return Path(override) if override else Path(__file__).resolve().parent
+
+
 def script_dir() -> Path:
-    return Path(__file__).resolve().parent
+    return _work_dir()
 
 
 def queue_path() -> Path:
