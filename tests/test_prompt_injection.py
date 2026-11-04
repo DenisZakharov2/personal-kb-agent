@@ -44,8 +44,12 @@ class TestPromptInjection:
 
         # Попытка вызвать confirm-инструмент по имени — неизвестный инструмент.
         result = asyncio.run(handle_call_tool("kb_confirm_change", {"change_id": "any-id"}))
-        assert result and result[0].type == "text"
-        assert "Неизвестный инструмент" in result[0].text
+        from mcp.types import CallToolResult
+
+        assert isinstance(result, CallToolResult)
+        assert result.isError is True
+        assert result.content[0].type == "text"
+        assert "Неизвестный инструмент" in result.content[0].text
 
         # Список инструментов не содержит ничего, что могло бы применить изменение.
         tools = asyncio.run(handle_list_tools())

@@ -37,11 +37,18 @@ class TestMcpInitialize:
 
         # tools/call (пустая БД — LLM не вызывается, сеть не нужна)
         result = asyncio.run(handle_call_tool("kb_search", {"query": "тест", "limit": 3}))
-        assert isinstance(result, list) and len(result) == 1
-        assert result[0].type == "text"
-        assert isinstance(result[0].text, str) and result[0].text
+        text_parts, structured = result
+        assert isinstance(text_parts, list) and len(text_parts) == 1
+        assert text_parts[0].type == "text"
+        assert isinstance(text_parts[0].text, str) and text_parts[0].text
+        # Strukturuierter Inhalt vorhanden
+        assert isinstance(structured, dict) and "items" in structured
 
-        # kb_get_note на несуществующий ID — структурированный ответ без исключений
+        # kb_get_note на несуществующий ID — ошибка unknown tool (CallToolResult)
         result_note = asyncio.run(handle_call_tool("kb_get_note", {"note_id": "нет-такого"}))
-        assert result_note and result_note[0].type == "text"
-        assert "не найдена" in result_note[0].text
+        from mcp.types import CallToolResult
+
+        assert isinstance(result_note, CallToolResult)
+        assert result_note.isError is True
+        assert result_note.content[0].type == "text"
+        assert "не найдена" in result_note.content[0].text
