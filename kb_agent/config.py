@@ -15,9 +15,9 @@ from __future__ import annotations
 import os
 from importlib import resources as importlib_resources
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Self
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 # Корень проекта (для установки из исходников). При установке через wheel
 # PROJECT_ROOT указывает в site-packages, поэтому пользовательские данные
@@ -27,14 +27,18 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 # Пакет с ресурсами (промпты, примеры конфигов), доставляемый с wheel
 RESOURCES_PACKAGE = "kb_agent.resources"
 
-# Пути по умолчанию
-DEFAULT_VAULT_PATH = Path("~/База знаний").expanduser()
+# Пути по умолчанию. Личного абсолютного пути нет: пользовательские данные
+# размещаются под data_dir (по умолчанию PROJECT_ROOT/data при установке из
+# исходников, или KB_DATA_DIR при установке через wheel).
 DEFAULT_DATA_DIR = PROJECT_ROOT / "data"
-DEFAULT_DB_PATH = DEFAULT_DATA_DIR / "state.db"
-DEFAULT_SOURCES_PATH = DEFAULT_DATA_DIR / "sources.yaml"
-DEFAULT_PROFILE_PATH = DEFAULT_DATA_DIR / "user_profile.yaml"
-DEFAULT_LOG_PATH = DEFAULT_DATA_DIR / "kb_agent.log"
 DEFAULT_PROMPTS_DIR = PROJECT_ROOT / "config" / "prompts"  # fallback для исходников
+
+# Имена производных файлов под data_dir (используются, если поле не задано явно).
+DEFAULT_DB_NAME = "state.db"
+DEFAULT_SOURCES_NAME = "sources.yaml"
+DEFAULT_PROFILE_NAME = "user_profile.yaml"
+DEFAULT_LOG_NAME = "kb_agent.log"
+DEFAULT_VAULT_SUBDIR = "vault"
 
 
 def _read_env_file(path: Path) -> dict[str, str]:
@@ -72,12 +76,22 @@ def _resource_path(package: str, resource_name: str) -> Optional[Path]:
 class AppConfig(BaseModel):
     """Основная конфигурация приложения."""
 
-    vault_path: Path = Field(default=DEFAULT_VAULT_PATH, description="Путь к Obsidian vault")
+    vault_path: Optional[Path] = Field(
+        default=None, description="Путь к Obsidian vault (по умолчанию data_dir/vault)"
+    )
     data_dir: Path = Field(default=DEFAULT_DATA_DIR, description="Каталог данных приложения")
-    db_path: Path = Field(default=DEFAULT_DB_PATH, description="Путь к SQLite базе состояния")
-    sources_path: Path = Field(default=DEFAULT_SOURCES_PATH, description="Путь к sources.yaml")
-    profile_path: Path = Field(default=DEFAULT_PROFILE_PATH, description="Путь к user_profile.yaml")
-    log_path: Path = Field(default=DEFAULT_LOG_PATH, description="Путь к лог-файлу")
+    db_path: Optional[Path] = Field(
+        default=None, description="Путь к SQLite базе состояния (по умолчанию data_dir/state.db)"
+    )
+    sources_path: Optional[Path] = Field(
+        default=None, description="Путь к sources.yaml (по умолчанию data_dir/sources.yaml)"
+    )
+    profile_path: Optional[Path] = Field(
+        default=None, description="Путь к user_profile.yaml (по умолчанию data_dir/user_profile.yaml)"
+    )
+    log_path: Optional[Path] = Field(
+        default=None, description="Путь к лог-файлу (по умолчанию data_dir/kb_agent.log)"
+    )
     prompts_dir: Path = Field(default=DEFAULT_PROMPTS_DIR, description="Каталог с промптами")
 
     # LLM
@@ -106,21 +120,43 @@ class AppConfig(BaseModel):
     yt_sub_langs: str = Field(default="ru,en", description="Языки субтитров через запятую")
     limit: int = Field(default=10, description="Постов/видео с каждого источника за запуск")
 
-    @field_validator(
-        "vault_path",
-        "data_dir",
-        "db_path",
-        "sources_path",
-        "profile_path",
-        "log_path",
-        "prompts_dir",
-        mode="after",
-    )
-    @classmethod
-    def _resolve_paths(cls, value: Path) -> Path:
-        if not value.is_absolute():
-            return PROJECT_ROOT / value
-        return value
+    @model_validator(mode="after")
+    def _resolve_paths(self) -> Self:
+        """Все пользовательские пути вычисляются от итогового data_dir.
+
+        Относительные пути раскрываются относительно PROJECT_ROOT. Зависимые
+        пути (db, sources, profile, log, vault) по умолчанию размещаются под
+        data_dir, если не заданы явно. Личного абсолютного пути нет.
+        """
+        # data_dir: относительный → PROJECT_ROOT
+        if not self.data_dir.is_absolute():
+            self.data_dir = PROJECT_ROOT / self.data_dir
+
+        # vault_path: по умолчанию data_dir/vault
+        if self.vault_path is None:
+            self.vault_path = self.data_dir / DEFAULT_VAULT_SUBDIR
+        elif not self.vault_path.is_absolute():
+            self.vault_path = PROJECT_ROOT / self.vault_path
+
+        # Производные пути: по умолчанию под data_dir
+        defaults = {
+            "db_path": DEFAULT_DB_NAME,
+            "sources_path": DEFAULT_SOURCES_NAME,
+            "profile_path": DEFAULT_PROFILE_NAME,
+            "log_path": DEFAULT_LOG_NAME,
+        }
+        for field_name, default_name in defaults.items():
+            value = getattr(self, field_name)
+            if value is None:
+                setattr(self, field_name, self.data_dir / default_name)
+            elif not value.is_absolute():
+                setattr(self, field_name, PROJECT_ROOT / value)
+
+        # prompts_dir: относительный → PROJECT_ROOT
+        if not self.prompts_dir.is_absolute():
+            self.prompts_dir = PROJECT_ROOT / self.prompts_dir
+
+        return self
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -130,8 +166,8 @@ def load_config(env_file: Optional[str] = None) -> AppConfig:
 
     Приоритет: переменные окружения > файл .env > значения по умолчанию.
 
-    Если задан KB_DATA_DIR, все производные пути (db, sources, profile, log)
-    вычисляются относительно него, если не заданы явно.
+    Производные пути (db, sources, profile, log, vault) вычисляются
+    относительно итогового data_dir, если не заданы явно.
     """
     env_vars: dict[str, str] = {}
 
@@ -176,20 +212,6 @@ def load_config(env_file: Optional[str] = None) -> AppConfig:
             kwargs[field_name] = env_vars[env_name]
 
     config = AppConfig(**kwargs)
-
-    # Если задан KB_DATA_DIR, вычисляем производные пути относительно него,
-    # если они не заданы явно через переменные окружения.
-    if "KB_DATA_DIR" in os.environ or "KB_DATA_DIR" in env_vars:
-        data_dir = config.data_dir
-        if "KB_DB_PATH" not in os.environ and "KB_DB_PATH" not in env_vars:
-            config.db_path = data_dir / "state.db"
-        if "KB_SOURCES_PATH" not in os.environ and "KB_SOURCES_PATH" not in env_vars:
-            config.sources_path = data_dir / "sources.yaml"
-        if "KB_PROFILE_PATH" not in os.environ and "KB_PROFILE_PATH" not in env_vars:
-            config.profile_path = data_dir / "user_profile.yaml"
-        if "KB_LOG_PATH" not in os.environ and "KB_LOG_PATH" not in env_vars:
-            config.log_path = data_dir / "kb_agent.log"
-
     return config
 
 
