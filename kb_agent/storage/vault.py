@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import re
 from pathlib import Path
 from typing import Optional
@@ -17,6 +18,24 @@ from kb_agent.config import AppConfig
 from kb_agent.utils.logger import setup_logger
 
 logger = setup_logger("kb_agent.storage.vault")
+
+
+def atomic_write_text(path: Path, text: str, backup: bool = True) -> None:
+    """Атомарная запись текста в файл.
+
+    Запись ведётся во временный файл в той же директории, затем
+    ``os.replace`` заменяет целевой файл — целевой файл никогда не остаётся
+    частично записанным при падении процесса. Если ``backup=True`` и целевой
+    файл существует, предварительно создаётся копия с расширением ``.bak``,
+    чтобы не потерять пользовательское содержимое при перезаписи (P2-09).
+    """
+    path = Path(path)
+    if backup and path.exists():
+        backup_path = path.with_name(path.name + ".bak")
+        backup_path.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
+    tmp_path = path.with_name(path.name + ".tmp")
+    tmp_path.write_text(text, encoding="utf-8")
+    os.replace(tmp_path, path)
 
 
 def _slugify(text: str) -> str:
