@@ -169,7 +169,8 @@ _SCHEMA = [
             entity_type TEXT NOT NULL,
             entity_id TEXT NOT NULL,
             parameters TEXT NOT NULL,
-            status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','confirmed','applied','rejected','failed')),
+            status TEXT NOT NULL DEFAULT 'pending'
+            CHECK (status IN ('pending','confirmed','applied','rejected','failed','expired')),
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             confirmed_at TEXT,
             applied_at TEXT,
@@ -225,10 +226,36 @@ _SCHEMA = [
     (
         13,
         """
-        ALTER TABLE pending_changes ADD COLUMN revision INTEGER DEFAULT 0;
-        ALTER TABLE pending_changes ADD COLUMN expires_at TEXT;
-        ALTER TABLE pending_changes ADD COLUMN reject_reason TEXT;
-        ALTER TABLE pending_changes ADD COLUMN content_hash TEXT;
+        -- Пересоздаём pending_changes: добавляем колонки ревизии/TTL/отказа/аудита
+        -- и расширяем CHECK-констрейнт статуса (значение 'expired' не входит в
+        -- старую проверку, поэтому простого ALTER TABLE ADD COLUMN недостаточно).
+        DROP TABLE IF EXISTS pending_changes_old;
+        ALTER TABLE pending_changes RENAME TO pending_changes_old;
+        CREATE TABLE pending_changes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            change_id TEXT UNIQUE NOT NULL,
+            action TEXT NOT NULL CHECK (action IN ('add_source','remove_source','enable_source','update_profile','revert_prompt')),
+            entity_type TEXT NOT NULL,
+            entity_id TEXT NOT NULL,
+            parameters TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending'
+                CHECK (status IN ('pending','confirmed','applied','rejected','failed','expired')),
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            confirmed_at TEXT,
+            applied_at TEXT,
+            confirmed_by TEXT,
+            result TEXT,
+            revision INTEGER DEFAULT 0,
+            expires_at TEXT,
+            reject_reason TEXT,
+            content_hash TEXT
+        );
+        INSERT INTO pending_changes (id, change_id, action, entity_type, entity_id, parameters, status,
+                                     created_at, confirmed_at, applied_at, confirmed_by, result)
+        SELECT id, change_id, action, entity_type, entity_id, parameters, status,
+               created_at, confirmed_at, applied_at, confirmed_by, result
+        FROM pending_changes_old;
+        DROP TABLE pending_changes_old;
         """,
     ),
 ]

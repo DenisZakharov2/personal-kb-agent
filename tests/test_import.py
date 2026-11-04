@@ -35,6 +35,14 @@ class TestImportCore:
         assert len(results) == 1
         assert results[0]["title"] == "Test Note"
 
+        # Заметка зарегистрирована в канонической таблице notes (P2-05)
+        notes = state.connect().execute("SELECT COUNT(*) AS c FROM notes").fetchone()
+        assert notes["c"] == 1
+        row = state.get_note(results[0]["note_id"])
+        assert row is not None
+        assert row["title"] == "Test Note"
+        assert row["revision"] >= 1
+
     def test_import_idempotent_no_duplicates(self, config, state, temp_dir):
         """Повторный импорт того же файла не создаёт дублей."""
         source_dir = temp_dir / "source"
