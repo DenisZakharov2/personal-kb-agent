@@ -148,28 +148,27 @@ class Pipeline:
                 # Определяем тип источника
                 source_type = item["source_id"].split("_")[0]  # tg или yt
 
-                # Суммаризация через LLM (темы профиля передаются в промпт)
-                llm_response = self.llm.summarize(
+                # Структурированная суммаризация через LLM (P2-10: JSON-схема,
+                # валидация темы против профиля, повтор при невалидной схеме)
+                summary = self.llm.summarize_structured(
                     raw_text=item["raw_text"] or "",
                     source_type=source_type,
                     source_name=item["source_id"],
                     topics=list(self.relevance.topics) if self.relevance else None,
                 )
 
-                if llm_response.error or not llm_response.text.strip():
+                if not summary.content.strip():
                     self.state.mark_failed(
                         queue_id,
-                        llm_response.error or "пустой ответ от LLM",
+                        "пустой ответ от LLM",
                         next_retry_at=None,
                     )
                     failed += 1
                     continue
 
-                # Извлекаем теги и тему из ответа LLM
-                tags = self._extract_tags(llm_response.text)
-                topic = self._extract_topic(llm_response.text) or self._guess_topic(
-                    llm_response.text
-                )
+                tags = summary.tags
+                topic = summary.topic
+                content = summary.content
 
                 # Пишем заметку в vault (тематические папки)
                 self.vault.write_note(
@@ -180,10 +179,10 @@ class Pipeline:
                     canonical_url=item["canonical_url"] or "",
                     published_at=item["published_at"] if item["published_at"] else None,
                     received_at=item["received_at"],
-                    title=item["title"] or "Без названия",
+                    title=summary.title or item["title"] or "Без названия",
                     tags=",".join(tags),
                     topic=topic,
-                    content=llm_response.text,
+                    content=content,
                 )
 
                 # Индексируем в FTS5 (с удалением старой записи при дубле)
@@ -193,7 +192,7 @@ class Pipeline:
                     title=item["title"] or "Без названия",
                     tags=",".join(tags),
                     topic=topic,
-                    content=llm_response.text,
+                    content=content,
                 )
 
                 # Связываем с уже накопленными заметками по общим тегам

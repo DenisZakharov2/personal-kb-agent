@@ -11,16 +11,48 @@ Anthropic (через совместимый прокси), Ollama и др.
 
 from __future__ import annotations
 
+import json
+import re
 import time
 from dataclasses import dataclass
 from typing import Optional
 
 import httpx
+from pydantic import BaseModel, Field, ValidationError
 
 from kb_agent.config import AppConfig
 from kb_agent.utils.logger import setup_logger
 
 logger = setup_logger("kb_agent.processing.llm_client")
+
+
+class SummaryData(BaseModel):
+    """Структурированный результат суммаризации (P2-10).
+
+    Вместо парсинга свободного Markdown по строкам «Теги:»/«Тема:» модель
+    возвращает JSON по жёсткой схеме. Тема валидируется против тем профиля.
+    """
+
+    title: str = Field(default="Без названия", description="Краткий заголовок заметки")
+    content: str = Field(default="", description="Полный текст заметки в формате Markdown")
+    tags: list[str] = Field(default_factory=list, description="Теги (до 10)")
+    topic: str = Field(default="Общее", description="Одна из тем профиля пользователя")
+
+
+_JSON_BLOCK_RE = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL | re.IGNORECASE)
+
+
+def _extract_json_block(text: str) -> str:
+    """Извлекает JSON из ответа модели (вырезает markdown-блоки, если есть)."""
+    match = _JSON_BLOCK_RE.search(text or "")
+    if match:
+        return match.group(1)
+    # Иначе пробуем взять всё от первой { до последней }
+    start = text.find("{") if text else -1
+    end = text.rfind("}") if text else -1
+    if 0 <= start < end:
+        return text[start : end + 1]
+    return text or ""
 
 # Статусы, при которых имеет смысл повторить запрос
 _RETRYABLE_STATUS = {408, 409, 425, 429, 500, 502, 503, 504}
@@ -214,3 +246,87 @@ class LLMClient:
             {"role": "user", "content": user_prompt},
         ]
         return self.complete(messages)
+
+    def summarize_structured(
+        self,
+        raw_text: str,
+        source_type: str,
+        source_name: str,
+        topics: Optional[list[str]] = None,
+    ) -> SummaryData:
+        """Суммаризирует текст в структурированный результат по JSON-схеме.
+
+        Модель просится вернуть JSON по схеме ``SummaryData`` (заголовок,
+        содержимое, теги, тема). Ответ парсится и валидируется через Pydantic;
+        при невалидной схеме запрос повторяется до ``max_retries``.
+        Тема валидируется против тем профиля: если модель вернула тему,
+        отсутствующую в профиле, подбирается ближайшая или ``Общее``.
+
+        Возвращает ``SummaryData`` (при полном отказе — заготовку с темой
+        ``Общее`` и пустым содержимым), чтобы конвейер мог продолжить работу.
+        """
+        topics = topics or []
+        topics_hint = f"\nДопустимые темы (выберите ровно одну): {', '.join(topics)}" if topics else ""
+        system_prompt = (
+            "Вы — опытный редактор базы знаний. Прочитайте сырой текст источника "
+            "и верните структурированную заметку в формате JSON — только JSON, "
+            "без любого другого текста.\n"
+            "Обязательные поля: title (краткий заголовок), content (полный текст "
+            "заметки в формате Markdown), tags (список тегов, массив строк), "
+            f"topic (одна из допустимых тем{topics_hint}).\n"
+            "Не придумывайте фактов, которых нет в тексте. "
+            "Если информации мало — честно укажите это в contenте."
+        )
+        user_prompt = (
+            f"Источник: {source_type} ({source_name})\n\n"
+            f"Текст:\n{raw_text}\n\n"
+            "Верните только JSON по схеме выше."
+        )
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
+
+        last_error = ""
+        for attempt in range(self.max_retries + 1):
+            resp = self.complete(messages)
+            if resp.error:
+                last_error = resp.error or "пустой ответ от LLM"
+                if attempt + 1 <= self.max_retries:
+                    time.sleep(0.5 * (2 ** attempt))
+                continue
+            try:
+                data = json.loads(_extract_json_block(resp.text))
+                summary = SummaryData(**data)
+                summary.topic = self._validate_topic(summary.topic, topics)
+                return summary
+            except (ValidationError, ValueError, json.JSONDecodeError) as exc:
+                last_error = str(exc)
+                logger.warning(
+                    "LLM структурированный ответ невалиден (попытка %s/%s): %s",
+                    attempt + 1,
+                    self.max_retries + 1,
+                    exc,
+                )
+                if attempt + 1 <= self.max_retries:
+                    time.sleep(0.5 * (2 ** attempt))
+
+        logger.error("Не удалось получить валидную структуру от LLM: %s", last_error)
+        return SummaryData(topic=self._validate_topic("Общее", topics))
+
+    @staticmethod
+    def _validate_topic(topic: str, topics: list[str]) -> str:
+        """Валидирует тему против списка тем профиля.
+
+        Если тема отсутствует в профиле, ищется ближайшее совпадение (одна
+        строка содержит другую), иначе возвращается «Общее».
+        """
+        if not topics:
+            return topic or "Общее"
+        if topic in topics:
+            return topic
+        lower = (topic or "").lower()
+        for t in topics:
+            if t.lower() in lower or lower in t.lower():
+                return t
+        return "Общее"

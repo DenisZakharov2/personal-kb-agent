@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from kb_agent.core.relevance import RelevanceGate
+from kb_agent.processing.llm_client import SummaryData
 from kb_agent.processing.pipeline import Pipeline
 from kb_agent.storage.state import StateManager
 
@@ -42,12 +43,14 @@ class TestPipelineRetry:
 
         pipeline = self._make_pipeline(config)
 
-        # Мокаем summarize, write_note, index_note чтобы не вызывать реальные зависимости
-        with patch.object(pipeline.llm, "summarize") as mock_summarize, \
+        # Мокаем summarize_structured, write_note, index_note чтобы не вызывать реальные зависимости
+        with patch.object(pipeline.llm, "summarize_structured") as mock_summarize, \
              patch.object(pipeline.vault, "write_note") as mock_write, \
              patch.object(pipeline.state, "index_note") as mock_index:
 
-            mock_summarize.return_value = MagicMock(error=None, text="## Суть\nТест\n\nТеги: тест\n")
+            mock_summarize.return_value = SummaryData(
+                title="Тест", content="## Суть\nТест\n", tags=["тест"], topic="Общее"
+            )
             mock_write.return_value = None
             mock_index.return_value = None
 
@@ -77,11 +80,13 @@ class TestPipelineRetry:
 
         pipeline = self._make_pipeline(config)
 
-        with patch.object(pipeline.llm, "summarize") as mock_summarize, \
+        with patch.object(pipeline.llm, "summarize_structured") as mock_summarize, \
              patch.object(pipeline.vault, "write_note") as mock_write, \
              patch.object(pipeline.state, "index_note") as mock_index:
 
-            mock_summarize.return_value = MagicMock(error=None, text="## Суть\nТест\n\nТеги: тест\n")
+            mock_summarize.return_value = SummaryData(
+                title="Stuck Title", content="## Суть\nТест\n", tags=["тест"], topic="Общее"
+            )
             mock_write.return_value = None
             mock_index.return_value = None
 
