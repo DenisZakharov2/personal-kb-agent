@@ -98,6 +98,11 @@ class SearchItem(BaseModel):
     tags: list[str] = Field(default_factory=list, description="Теги")
     revision: Optional[int] = Field(default=None, description="Ревизия заметки")
     content_hash: Optional[str] = Field(default=None, description="Хэш содержимого")
+    # Превью содержимого заметки (первые 500 символов) — чтобы внешний агент
+    # мог ответить по существу без лишнего kb_get_note (R-06).
+    content_preview: Optional[str] = Field(
+        default=None, description="Превью содержимого заметки (до 500 символов)"
+    )
     # Метаданные происхождения (6.1)
     untrusted_content: bool = Field(
         default=False,
@@ -418,7 +423,7 @@ async def handle_call_tool(name: str, arguments: Optional[dict[str, Any]]) -> An
         if name == "kb_search":
             query = arguments.get("query", "") or ""
             limit = int(arguments.get("limit", 5) or 5)
-            limit = max(1, min(limit, 100))
+            limit = max(1, min(limit, 20))
             cursor = int(arguments.get("cursor", 0) or 0)
             cursor = max(0, cursor)
 
@@ -463,6 +468,8 @@ async def handle_call_tool(name: str, arguments: Optional[dict[str, Any]]) -> An
                         # Метка чувствительности (6.2)
                         is_private=bool(r.is_private),
                         sensitivity=r.sensitivity,
+                        # Превью содержимого (R-06)
+                        content_preview=r.content[:500] if r.content else None,
                     )
                 )
 
@@ -489,6 +496,9 @@ async def handle_call_tool(name: str, arguments: Optional[dict[str, Any]]) -> An
                 snippet = " ".join((it.snippet or "").split())[:300]
                 if snippet:
                     lines.append(f"  > {snippet}")
+                preview = (it.content_preview or "").strip()
+                if preview:
+                    lines.append(f"  Содержимое: {preview}")
             result_text = "\n".join(lines) if lines else "В базе недостаточно данных по вашему запросу."
 
             # Возвращаем и текст, и структурированный контент (кортеж).

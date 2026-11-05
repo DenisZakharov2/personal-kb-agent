@@ -18,6 +18,7 @@ import yaml
 from kb_agent.config import AppConfig
 from kb_agent.core.prompts import SUMMARIZE_PROMPT_NAME, ensure_prompt_seeded
 from kb_agent.core.relevance import RelevanceGate
+from kb_agent.sources.registry import ensure_sources_file
 from kb_agent.processing.llm_client import LLMClient
 from kb_agent.sources.manager import run_collection
 from kb_agent.storage.catalog import CatalogGenerator
@@ -58,6 +59,14 @@ class Pipeline:
         """
         logger.info("=== Запуск конвейера наполнения ===")
         self.state.init_db()
+        # Создаём файл источников, если его нет (R-05).
+        sources_path = ensure_sources_file(config=self.config)
+        sources_text = sources_path.read_text(encoding="utf-8") if sources_path.exists() else ""
+        if not any(line.strip().startswith("- ") for line in sources_text.splitlines()):
+            logger.warning(
+                "Реестр источников пуст (%s). Добавьте источники: kb-agent sources add ...",
+                sources_path,
+            )
         # Импортируем базовую версию системного промпта в prompt_history,
         # чтобы работали откат промпта и self-improve.
         ensure_prompt_seeded(self.config, self.state)
