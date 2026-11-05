@@ -208,3 +208,47 @@ class TestLLMStructured:
         assert LLMClient._validate_topic("Любая", []) == "Любая"
         assert LLMClient._validate_topic("", []) == "Общее"
 
+    def test_summarize_structured_topic_validated_closest_match(self):
+        """Тема из LLM не в профиле, но есть ближайшее совпадение → подставляется оно."""
+        client = _client(provider="ollama", api_key=None)
+        json_text = json.dumps(
+            {
+                "title": "Заголовок",
+                "content": "# Заголовок\n\nТекст.",
+                "tags": ["ии"],
+                "topic": "нейросети",  # не в профиле, но содержится в "ИИ и нейросети"
+            }
+        )
+        with patch("kb_agent.processing.llm_client.httpx.Client") as mock_client:
+            self._mock_client_post(mock_client, json_text=json_text)
+            result = client.summarize_structured(
+                raw_text="текст про нейросети",
+                source_type="yt",
+                source_name="yt_test",
+                topics=["ИИ и нейросети", "Программирование"],
+            )
+
+        assert result.topic == "ИИ и нейросети"
+
+    def test_summarize_structured_topic_validated_unknown(self):
+        """Тема из LLM не в профиле и нет совпадений → «Общее»."""
+        client = _client(provider="ollama", api_key=None)
+        json_text = json.dumps(
+            {
+                "title": "Заголовок",
+                "content": "# Заголовок\n\nТекст.",
+                "tags": ["кулинария"],
+                "topic": "Кулинария",  # не в профиле, нет совпадений
+            }
+        )
+        with patch("kb_agent.processing.llm_client.httpx.Client") as mock_client:
+            self._mock_client_post(mock_client, json_text=json_text)
+            result = client.summarize_structured(
+                raw_text="текст про рецепты",
+                source_type="tg",
+                source_name="tg_test",
+                topics=["ИИ и нейросети", "Программирование"],
+            )
+
+        assert result.topic == "Общее"
+

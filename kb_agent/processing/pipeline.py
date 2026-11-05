@@ -454,17 +454,6 @@ class Pipeline:
         for _, other_note_id in sorted(scored, reverse=True)[:3]:
             self.state.add_link(note_id, other_note_id, "references")
 
-    def _guess_topic(self, text: str) -> str:
-        """Определяет тематику заметки (заглушка, будет уточняться через профиль)."""
-        lower = text.lower()
-        if any(w in lower for w in ("python", "код", "программ", "разработк")):
-            return "Программирование"
-        if any(w in lower for w in ("автоматизац", "n8n", "скрипт")):
-            return "Автоматизация"
-        if any(w in lower for w in ("нейросет", "ии ", "гпт", "модель")):
-            return "ИИ и нейросети"
-        return "Общее"
-
     def close(self) -> None:
         self.state.close()
 
