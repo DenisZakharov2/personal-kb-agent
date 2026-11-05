@@ -34,7 +34,7 @@ from kb_agent.config import load_config
 from kb_agent.core.search import SearchEngine
 from kb_agent.core.insights import InsightsEngine
 from kb_agent.processing.llm_client import LLMClient
-from kb_agent.sources.registry import normalize_source
+from kb_agent.sources.registry import SOURCE_TYPES, normalize_source
 from kb_agent.storage.pending import PendingManager
 from kb_agent.storage.state import StateManager
 from kb_agent.utils.logger import setup_logger
@@ -61,9 +61,6 @@ ALLOWED_HOSTS = {
     "youtu.be",
     "www.youtu.be",
 }
-
-ALLOWED_SOURCE_TYPES = {"telegram", "youtube"}
-
 
 def _is_url_allowed(url: str) -> bool:
     """Проверяет, что хост URL входит в allowlist (6.1)."""
@@ -207,7 +204,10 @@ _NOTE_INPUT_SCHEMA = {
     "additionalProperties": False,
 }
 
-_SOURCE_TYPE_ENUM = {"type": "string", "enum": ["telegram", "youtube"]}
+_SOURCE_TYPE_ENUM = {
+    "type": "string",
+    "enum": sorted(SOURCE_TYPES),
+}
 
 
 _READ_ONLY_ANNOTATIONS = ToolAnnotations(

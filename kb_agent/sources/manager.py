@@ -29,6 +29,8 @@ class SourceCollectionResult:
     total_with_subtitles: int = 0
     by_source: dict[str, dict] = field(default_factory=dict)
     errors: list[str] = field(default_factory=list)
+    skipped: dict[str, str] = field(default_factory=dict)
+    """Источники, которые не стали собираться: {source_id: причина} (например, выключен)."""
 
 
 class SourceManager:
@@ -50,6 +52,11 @@ class SourceManager:
         self.registry.load()
         sources = self.registry.list(enabled_only=True)
         result = SourceCollectionResult()
+
+        # Фиксируем выключенные источники для health summary (P2-14).
+        for source in self.registry.list(enabled_only=False):
+            if not source.enabled:
+                result.skipped[source.id] = "источник выключен"
 
         if not sources:
             logger.warning(

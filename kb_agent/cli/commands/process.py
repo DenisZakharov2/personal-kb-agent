@@ -34,6 +34,12 @@ app = typer.Typer(help="Конвейер наполнения базы знан�
 logger = setup_logger("kb_agent.process")
 
 
+# Политика exit code команды `process run` (P2-14):
+#   0 — все источники собраны без ошибок, обработка прошла без сбоев.
+#   1 — есть хоть одна ошибка сбора или обработки (partial success — это ошибка).
+#   2 — критическая ошибка конфигурации (не загружена конфигурация и т.д.).
+
+
 @app.command("run")
 def process_run(
     json_output: bool = typer.Option(
@@ -44,10 +50,26 @@ def process_run(
     ),
 ) -> None:
     """Запустить конвейер наполнения (сбор + суммаризация + запись в vault)."""
-    config = load_config()
-    pipeline = Pipeline(config)
+    try:
+        config = load_config()
+        pipeline = Pipeline(config)
+    except Exception as exc:  # noqa: BLE001
+        # Критическая ошибка конфигурации — exit code 2.
+        logger.exception("Критическая ошибка конфигурации")
+        if json_output:
+            _output_json({"error": str(exc), "ok": False})
+        else:
+            typer.echo(f"✗ Критическая ошибка конфигурации: {exc}", err=True)
+        raise typer.Exit(code=2)
+
     try:
         result = pipeline.run()
+
+        # P2-14: ошибки сбора/обработки выводятся и влияют на exit code
+        # независимо от режима вывода (включая --json).
+        coll_errors = result.get("collection", {}).get("errors", [])
+        processing_failed = result.get("processing", {}).get("failed", 0)
+        has_errors = (not result.get("ok", True)) or bool(coll_errors) or bool(processing_failed)
 
         if json_output:
             _output_json(result)
@@ -70,20 +92,46 @@ def process_run(
             if result.get("vault_digest"):
                 typer.echo(f"Дайджест: {result['vault_digest']}")
 
-            # P2-14: ошибки сбора/обработки выводятся и влияют на exit code.
-            coll_errors = result.get("collection", {}).get("errors", [])
-            processing_failed = result.get("processing", {}).get("failed", 0)
-            if not result.get("ok", True) or coll_errors or processing_failed:
-                if coll_errors:
-                    typer.echo("", err=True)
-                    typer.echo("Ошибки сбора источников:", err=True)
-                    for err in coll_errors:
-                        typer.echo(f"  - {err}", err=True)
-                if processing_failed:
+            # P2-14: сводка по состоянию источников (health).
+            health = result.get("health", {})
+            summary = result.get("summary", {})
+            if summary or health:
+                total = summary.get("total_sources", len(health))
+                healthy = summary.get(
+                    "healthy", sum(1 for h in health.values() if h["status"] == "ok")
+                )
+                failed = summary.get(
+                    "failed", sum(1 for h in health.values() if h["status"] == "failed")
+                )
+                skipped_count = summary.get(
+                    "skipped", sum(1 for h in health.values() if h["status"] == "skipped")
+                )
+                if total == 0:
+                    typer.echo("Источников не найдено. Добавьте: kb-agent sources add ...")
+                elif failed == 0 and skipped_count == 0:
+                    typer.echo(f"Все источники в порядке ({healthy} из {total}).")
+                else:
                     typer.echo(
-                        f"Ошибок обработки очереди: {processing_failed}", err=True
+                        f"Источники: здоровых {healthy}, упавших {failed}, "
+                        f"пропущено {skipped_count} из {total}."
                     )
-                raise typer.Exit(code=1)
+
+            if coll_errors:
+                typer.echo("", err=True)
+                typer.echo("Ошибки сбора источников:", err=True)
+                for err in coll_errors:
+                    if ": " in err:
+                        source_id, text = err.split(": ", 1)
+                        typer.echo(f"  - {source_id}: {text}", err=True)
+                    else:
+                        typer.echo(f"  - {err}", err=True)
+            if processing_failed:
+                typer.echo(
+                    f"Ошибок обработки очереди: {processing_failed}", err=True
+                )
+
+        if has_errors:
+            raise typer.Exit(code=1)
     finally:
         pipeline.close()
 

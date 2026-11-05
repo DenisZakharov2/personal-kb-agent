@@ -172,6 +172,70 @@ class TestPipelineExitCode:
         assert result["ok"] is False
         assert result["processing"]["failed"] == 2
 
+    def test_run_health_reflects_collection_errors(self, config, monkeypatch):
+        """collection.errors попадают в result, ok=False, health помечает источник failed."""
+        from kb_agent.processing import pipeline as pipeline_mod
+        from kb_agent.sources.manager import SourceCollectionResult
+
+        def fake_run_collection(config, state):
+            result = SourceCollectionResult()
+            result.errors = ["yt_amorev: yt-dlp timeout"]
+            result.by_source = {"yt_amorev": {"error": "yt-dlp timeout"}}
+            return result
+
+        monkeypatch.setattr(pipeline_mod, "run_collection", fake_run_collection)
+        pipeline = Pipeline(config)
+        pipeline._process_queue = lambda: {"processed": 0, "created": 0, "skipped": 0, "failed": 0}
+        pipeline.catalog.generate = lambda: __import__("pathlib", fromlist=["Path"]).Path("/tmp/catalog.md")
+        pipeline._write_vault_digest = lambda *a, **k: __import__("pathlib", fromlist=["Path"]).Path("/tmp/digest.md")
+        monkeypatch.setattr(pipeline_mod, "ensure_prompt_seeded", lambda config, state: None)
+        pipeline.state.init_db = lambda: None
+        pipeline._load_profile = lambda: {}
+
+        result = pipeline.run()
+        pipeline.close()
+
+        assert result["ok"] is False
+        assert "yt_amorev: yt-dlp timeout" in result["collection"]["errors"]
+        assert result["health"]["yt_amorev"]["status"] == "failed"
+        assert result["health"]["yt_amorev"]["error"] == "yt-dlp timeout"
+        assert result["summary"]["total_sources"] == 1
+        assert result["summary"]["failed"] == 1
+
+    def test_run_health_skipped_disabled_source(self, config, monkeypatch):
+        """Выключенный источник попадает в health со статусом skipped."""
+        from kb_agent.processing import pipeline as pipeline_mod
+        from kb_agent.sources.manager import SourceCollectionResult
+
+        def fake_run_collection(config, state):
+            result = SourceCollectionResult()
+            result.by_source = {"tg_ok": {"new": 2, "spam": 0, "skipped": 0}}
+            result.skipped = {"yt_off": "источник выключен"}
+            return result
+
+        monkeypatch.setattr(pipeline_mod, "run_collection", fake_run_collection)
+        pipeline = Pipeline(config)
+        pipeline._process_queue = lambda: {"processed": 0, "created": 0, "skipped": 0, "failed": 0}
+        pipeline.catalog.generate = lambda: __import__("pathlib", fromlist=["Path"]).Path("/tmp/catalog.md")
+        pipeline._write_vault_digest = lambda *a, **k: __import__("pathlib", fromlist=["Path"]).Path("/tmp/digest.md")
+        monkeypatch.setattr(pipeline_mod, "ensure_prompt_seeded", lambda config, state: None)
+        pipeline.state.init_db = lambda: None
+        pipeline._load_profile = lambda: {}
+
+        result = pipeline.run()
+        pipeline.close()
+
+        assert result["ok"] is True
+        assert result["health"]["tg_ok"]["status"] == "ok"
+        assert result["health"]["yt_off"]["status"] == "skipped"
+        assert result["health"]["yt_off"]["error"] == "источник выключен"
+        assert result["summary"] == {
+            "total_sources": 2,
+            "healthy": 1,
+            "failed": 0,
+            "skipped": 1,
+        }
+
     def test_process_run_exits_nonzero_on_errors(self, config, monkeypatch):
         """CLI process run завершается с кодом 1 при ошибках сбора/обработки."""
         from typer.testing import CliRunner

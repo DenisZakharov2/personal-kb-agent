@@ -96,6 +96,53 @@ class Pipeline:
         processing_failed = digest.get("failed", 0)
         ok = not collection_errors and processing_failed == 0
 
+        # P2-14: Health summary — статус каждого источника (ok/failed/skipped).
+        error_by_source: dict[str, str] = {}
+        for err in collection_errors:
+            if ": " in err:
+                source_id, text = err.split(": ", 1)
+                error_by_source[source_id] = text
+            else:
+                error_by_source[err] = err
+
+        health: dict[str, dict] = {}
+        for source_id, stats in collection.by_source.items():
+            if source_id in collection.skipped:
+                # Выключенный источник не собирался — статус skipped.
+                continue
+            error = error_by_source.get(source_id)
+            if error:
+                health[source_id] = {
+                    "status": "failed",
+                    "new": 0,
+                    "skipped": 0,
+                    "failed": 1,
+                    "error": error,
+                }
+            else:
+                health[source_id] = {
+                    "status": "ok",
+                    "new": stats.get("new", 0),
+                    "skipped": stats.get("skipped", 0),
+                    "failed": 0,
+                    "error": None,
+                }
+        for source_id, reason in collection.skipped.items():
+            health[source_id] = {
+                "status": "skipped",
+                "new": 0,
+                "skipped": 1,
+                "failed": 0,
+                "error": reason,
+            }
+
+        summary = {
+            "total_sources": len(health),
+            "healthy": sum(1 for h in health.values() if h["status"] == "ok"),
+            "failed": sum(1 for h in health.values() if h["status"] == "failed"),
+            "skipped": sum(1 for h in health.values() if h["status"] == "skipped"),
+        }
+
         # Итоговый дайджест (P2-14: ошибки сбора/обработки попадают в итог,
         # флаг ok определяет политику exit code в CLI).
         result = {
@@ -104,12 +151,14 @@ class Pipeline:
                 "youtube": yt_stats,
                 "errors": collection_errors,
             },
+            "health": health,
+            "summary": summary,
             "processing": digest,
             "catalog": str(catalog_path),
             "vault_digest": str(digest_path),
             "ok": ok,
         }
-        logger.info("=== Конвейер завершён (ok=%s) ===", ok)
+        logger.info("=== Конвейер завершён (ok=%s, sources=%s) ===", ok, summary)
         return result
 
     def _process_queue(self) -> dict:
