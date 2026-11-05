@@ -105,6 +105,40 @@ class TestCatalogGenerate:
         assert "Хорошая" in text
         assert "плохая" in text  # заметка попадает в каталог (тема по умолчанию, заголовок от имени файла)
 
+    def test_frontmatter_at_sign_value_is_parsed(self, temp_dir):
+        """Значение frontmatter, начинающееся с @, экранируется и парсится (например источник: @ragnarokzone)."""
+        vault = _make_vault(temp_dir)
+        folder = vault._topic_folder("Телеграм")
+        file_path = folder / "2026-10-26_тест.md"
+        file_path.write_text(
+            "---\ntitle: Тест\nsource: telegram\nисточник: @ragnarokzone\ntopic: Телеграм\n---\n\n# Тест\n\nконтент\n",
+            encoding="utf-8",
+        )
+
+        gen = CatalogGenerator(vault)
+        # Не должно падать с исключением
+        gen.generate()
+
+        # Заметка попадает в каталог с правильным заголовком из frontmatter
+        text = (vault.vault_path / "Каталог.md").read_text(encoding="utf-8")
+        assert "Тест" in text
+
+    def test_frontmatter_colon_in_title_is_parsed(self, temp_dir):
+        """Значение frontmatter с ': ' внутри (например заголовок с двоеточием) парсится корректно."""
+        vault = _make_vault(temp_dir)
+        folder = vault._topic_folder("ИИ")
+        file_path = folder / "2026-10-26_тест.md"
+        file_path.write_text(
+            "---\ntitle: Что такое ИИ: простое объяснение\ntopic: ИИ\n---\n\n# Что такое ИИ: простое объяснение\n\nконтент\n",
+            encoding="utf-8",
+        )
+
+        gen = CatalogGenerator(vault)
+        gen.generate()
+
+        text = (vault.vault_path / "Каталог.md").read_text(encoding="utf-8")
+        assert "Что такое ИИ: простое объяснение" in text
+
 
 class TestCatalogDigestAtomic:
     def test_digest_atomic_write_no_tmp_left(self, temp_dir, config, state):

@@ -111,3 +111,46 @@ class TestDoctor:
         directions = {i["detail"] for i in data["issues"] if i["kind"] == "source_mismatch"}
         assert any("SQLite" in d and "sources.yaml" in d for d in directions)
         assert any("sources.yaml" in d and "SQLite" in d for d in directions)
+
+    def test_doctor_includes_sources_health(self, config, state, monkeypatch):
+        """doctor выводит состояние источников (sources) в JSON и тексте."""
+        conn = state.connect()
+        conn.execute(
+            "INSERT INTO sources (source_id, source_type, channel, enabled) "
+            "VALUES ('tg_rubiconzone','telegram','https://t.me/s/rubiconzone',1)"
+        )
+        conn.execute(
+            "INSERT INTO sources (source_id, source_type, channel, enabled) "
+            "VALUES ('yt_amorev','youtube','https://youtube.com/@amorev',0)"
+        )
+        conn.commit()
+
+        # JSON-вывод содержит секцию sources
+        result = _run_doctor(config, monkeypatch)
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+
+        assert "sources" in data, data
+        sources = {s["source_id"]: s for s in data["sources"]}
+        assert "tg_rubiconzone" in sources
+        assert sources["tg_rubiconzone"]["source_type"] == "telegram"
+        assert sources["tg_rubiconzone"]["url"] == "https://t.me/s/rubiconzone"
+        assert sources["tg_rubiconzone"]["enabled"] is True
+
+        assert "yt_amorev" in sources
+        assert sources["yt_amorev"]["enabled"] is False
+
+        # Текстовый вывод тоже содержит источники и их статусы
+        result_text = _run_doctor(config, monkeypatch, json_output=False)
+        assert result_text.exit_code == 0
+        assert "tg_rubiconzone" in result_text.output
+        assert "yt_amorev" in result_text.output
+        assert "включён" in result_text.output
+        assert "выключен" in result_text.output
+
+    def test_doctor_sources_empty_when_no_sources(self, config, state, monkeypatch):
+        """Без источников doctor возвращает пустой список sources."""
+        result = _run_doctor(config, monkeypatch)
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["sources"] == []
