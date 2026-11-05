@@ -262,7 +262,7 @@ _LIST_TOOLS: list[Tool] = [
     ),
     _write_tool(
         "kb_add_source",
-        "Создать pending-запрос на добавление источника (Telegram/YouTube). Требует подтверждения через kb_confirm_change.",
+        "Создать pending-запрос на добавление источника (Telegram/YouTube). Требует подтверждения через отдельный человеческий канал: `kb-agent confirm <change_id>`.",
         {
             "type": "object",
             "properties": {
@@ -276,7 +276,7 @@ _LIST_TOOLS: list[Tool] = [
     ),
     _write_tool(
         "kb_remove_source",
-        "Создать pending-запрос на удаление источника. Требует подтверждения через kb_confirm_change.",
+        "Создать pending-запрос на удаление источника. Требует подтверждения через отдельный человеческий канал: `kb-agent confirm <change_id>`.",
         {
             "type": "object",
             "properties": {
@@ -288,7 +288,7 @@ _LIST_TOOLS: list[Tool] = [
     ),
     _write_tool(
         "kb_enable_source",
-        "Создать pending-запрос на включение/выключение источника. Требует подтверждения через kb_confirm_change.",
+        "Создать pending-запрос на включение/выключение источника. Требует подтверждения через отдельный человеческий канал: `kb-agent confirm <change_id>`.",
         {
             "type": "object",
             "properties": {
@@ -301,7 +301,7 @@ _LIST_TOOLS: list[Tool] = [
     ),
     _write_tool(
         "kb_update_profile",
-        "Создать pending-запрос на обновление пользовательского профиля. Требует подтверждения через kb_confirm_change.",
+        "Создать pending-запрос на обновление пользовательского профиля. Требует подтверждения через отдельный человеческий канал: `kb-agent confirm <change_id>`.",
         {
             "type": "object",
             "properties": {
@@ -316,7 +316,7 @@ _LIST_TOOLS: list[Tool] = [
     ),
     _write_tool(
         "kb_revert_prompt",
-        "Создать pending-запрос на откат системного промпта к предыдущей версии. Требует подтверждения через kb_confirm_change.",
+        "Создать pending-запрос на откат системного промпта к предыдущей версии. Требует подтверждения через отдельный человеческий канал: `kb-agent confirm <change_id>`.",
         {
             "type": "object",
             "properties": {
@@ -561,7 +561,7 @@ async def handle_call_tool(name: str, arguments: Optional[dict[str, Any]]) -> An
                 f"Активен: {enabled}",
                 "",
                 "Статус: pending (ожидает подтверждения)",
-                "Чтобы применить, вызовите kb_confirm_change с этим change_id.",
+                "Чтобы применить, выполните команду человека: `kb-agent confirm <change_id>`.",
             ]
             return _ok_text("\n".join(lines))
 
@@ -580,7 +580,7 @@ async def handle_call_tool(name: str, arguments: Optional[dict[str, Any]]) -> An
                 f"source_id: {source_id}",
                 "",
                 "Статус: pending (ожидает подтверждения)",
-                "Чтобы применить, вызовите kb_confirm_change с этим change_id.",
+                "Чтобы применить, выполните команду человека: `kb-agent confirm <change_id>`.",
             ]
             return _ok_text("\n".join(lines))
 
@@ -603,7 +603,7 @@ async def handle_call_tool(name: str, arguments: Optional[dict[str, Any]]) -> An
                 f"enabled: {enabled}",
                 "",
                 "Статус: pending (ожидает подтверждения)",
-                "Чтобы применить, вызовите kb_confirm_change с этим change_id.",
+                "Чтобы применить, выполните команду человека: `kb-agent confirm <change_id>`.",
             ]
             return _ok_text("\n".join(lines))
 
@@ -622,7 +622,7 @@ async def handle_call_tool(name: str, arguments: Optional[dict[str, Any]]) -> An
                 f"Поля для обновления: {', '.join(updates.keys())}",
                 "",
                 "Статус: pending (ожидает подтверждения)",
-                "Чтобы применить, вызовите kb_confirm_change с этим change_id.",
+                "Чтобы применить, выполните команду человека: `kb-agent confirm <change_id>`.",
             ]
             return _ok_text("\n".join(lines))
 
@@ -643,7 +643,7 @@ async def handle_call_tool(name: str, arguments: Optional[dict[str, Any]]) -> An
                 f"version: {version if version is not None else 'предыдущая'}",
                 "",
                 "Статус: pending (ожидает подтверждения)",
-                "Чтобы применить, вызовите kb_confirm_change с этим change_id.",
+                "Чтобы применить, выполните команду человека: `kb-agent confirm <change_id>`.",
             ]
             return _ok_text("\n".join(lines))
 
