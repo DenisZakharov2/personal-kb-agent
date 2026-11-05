@@ -7,7 +7,7 @@ SourceConfig описывает один источник (тип, URL, флаг
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
+
 
 @dataclass
 class SourceConfig:
@@ -17,12 +17,12 @@ class SourceConfig:
     type: str  # telegram, youtube, website, papers, personal
     url: str
     enabled: bool = True
-    last_checked: Optional[str] = None
-    last_updated: Optional[str] = None
+    last_checked: str | None = None
+    last_updated: str | None = None
     extra: dict = field(default_factory=dict)
 
     @classmethod
-    def from_dict(cls, data: dict) -> "SourceConfig":
+    def from_dict(cls, data: dict) -> SourceConfig:
         return cls(
             id=data["id"],
             type=data["type"],
@@ -58,4 +58,4 @@ class SourceItem:
     title: str
     raw_text: str
     raw_hash: str
-    published_at: Optional[str] = None
+    published_at: str | None = None

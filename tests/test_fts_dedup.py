@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from kb_agent.storage.state import StateManager
-
 
 class TestFtsDedup:
     """P2-04: Повторная индексация одного note_id оставляет один результат."""

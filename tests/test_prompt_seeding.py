@@ -7,12 +7,10 @@ version=1, is_active=1 при первом запуске, и что актив�
 
 from __future__ import annotations
 
-import json
-
 from typer.testing import CliRunner
 
-from kb_agent.cli.main import app
 import kb_agent.cli.commands.interview as interview_mod
+from kb_agent.cli.main import app
 from kb_agent.core.interview import InterviewManager
 from kb_agent.core.prompts import (
     ANSWER_PROMPT_NAME,
@@ -21,7 +19,6 @@ from kb_agent.core.prompts import (
     ensure_prompt_seeded,
     get_active_system_prompt,
 )
-from kb_agent.storage.state import StateManager
 
 
 def _invoke_interview_init(config, monkeypatch):

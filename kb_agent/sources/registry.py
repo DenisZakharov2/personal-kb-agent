@@ -13,11 +13,10 @@ import re
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional, Tuple
 
 import yaml
 
-from kb_agent.config import AppConfig, PROJECT_ROOT, load_config
+from kb_agent.config import PROJECT_ROOT, AppConfig, load_config
 from kb_agent.sources.base import SourceConfig
 from kb_agent.storage.state import StateManager
 from kb_agent.utils.logger import setup_logger
@@ -37,8 +36,8 @@ _YOUTUBE_URL_RE = re.compile(
 
 
 def normalize_source(
-    source_type: str, url: str, source_id: Optional[str] = None
-) -> Tuple[str, str, str]:
+    source_type: str, url: str, source_id: str | None = None
+) -> tuple[str, str, str]:
     """Нормализует и валидирует источник (P2-13).
 
     Возвращает (source_id, url, source_type). source_id генерируется из URL,
@@ -79,8 +78,8 @@ class SourceRegistry:
 
     def __init__(
         self,
-        sources_path: Optional[Path] = None,
-        state: Optional[StateManager] = None,
+        sources_path: Path | None = None,
+        state: StateManager | None = None,
     ) -> None:
         if sources_path is None:
             config = load_config()
@@ -198,7 +197,7 @@ class SourceRegistry:
         except OSError as exc:
             logger.warning("Не удалось экспортировать sources.yaml: %s", exc)
 
-    def import_from_yaml(self, sources_path: Optional[Path] = None) -> int:
+    def import_from_yaml(self, sources_path: Path | None = None) -> int:
         """Импортирует источники из YAML-файла в SQLite (kanon). Возвращает количество импортированных."""
         path = Path(sources_path) if sources_path else self.sources_path
         if not path.exists():
@@ -230,7 +229,7 @@ class SourceRegistry:
             result = [s for s in result if s.enabled]
         return sorted(result, key=lambda s: s.id)
 
-    def get(self, source_id: str) -> Optional[SourceConfig]:
+    def get(self, source_id: str) -> SourceConfig | None:
         """Возвращает источник по id или None."""
         self.load()
         return self._sources.get(source_id)
@@ -381,8 +380,8 @@ def _sources_from_config(config: AppConfig) -> list[SourceConfig]:
 
 
 def ensure_sources_file(
-    sources_path: Optional[Path] = None,
-    config: Optional[AppConfig] = None,
+    sources_path: Path | None = None,
+    config: AppConfig | None = None,
 ) -> Path:
     """Создаёт sources.yaml, если файла нет.
 

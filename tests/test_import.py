@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
-from kb_agent.core.import_core import CoreImporter, run_import_core
-from kb_agent.storage.state import StateManager
+from kb_agent.core.import_core import run_import_core
 
 
 class TestImportCore:

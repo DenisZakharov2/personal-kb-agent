@@ -13,7 +13,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 from kb_agent.config import AppConfig
 from kb_agent.storage.state import StateManager
@@ -53,7 +52,7 @@ PROMPT_TYPES = {
 }
 
 
-def ensure_prompt_seeded(config: AppConfig, state: StateManager) -> Optional[dict]:
+def ensure_prompt_seeded(config: AppConfig, state: StateManager) -> dict | None:
     """Импортирует базовые версии промптов в prompt_history (однократно).
 
     Просеиваются ``agent_prompt``, ``summarize_prompt`` и ``answer_prompt`` из
@@ -64,7 +63,7 @@ def ensure_prompt_seeded(config: AppConfig, state: StateManager) -> Optional[dic
     """
     from kb_agent.config import get_prompt_text
 
-    seeded: Optional[dict] = None
+    seeded: dict | None = None
     # agent_prompt (search)
     base_text = get_prompt_text("agent_prompt.md", config)
     result = state.seed_prompt_from_text(
@@ -113,7 +112,7 @@ def ensure_prompt_seeded(config: AppConfig, state: StateManager) -> Optional[dic
     return seeded
 
 
-def get_active_system_prompt(state: StateManager, prompt_name: str = DEFAULT_PROMPT_NAME) -> Optional[str]:
+def get_active_system_prompt(state: StateManager, prompt_name: str = DEFAULT_PROMPT_NAME) -> str | None:
     """Содержимое активной версии промпта ``prompt_name`` или None.
 
     По умолчанию возвращает ``agent_prompt`` (ответы на вопросы). Для суммаризации

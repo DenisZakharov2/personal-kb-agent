@@ -7,12 +7,12 @@ note_links, feedback, prompt_history, processed, pending_changes (Этап 4), s
 
 from __future__ import annotations
 
-import hashlib
 import re
 import sqlite3
+from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Callable, Optional, Union
+from typing import Union
 
 from kb_agent.utils.logger import setup_logger
 
@@ -368,7 +368,7 @@ class StateManager:
     def __init__(self, db_path: Path) -> None:
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._conn: Optional[sqlite3.Connection] = None
+        self._conn: sqlite3.Connection | None = None
 
     def connect(self) -> sqlite3.Connection:
         if self._conn is None:
@@ -384,7 +384,7 @@ class StateManager:
             self._conn.close()
             self._conn = None
 
-    def __enter__(self) -> "StateManager":
+    def __enter__(self) -> StateManager:
         self.connect()
         return self
 
@@ -427,8 +427,8 @@ class StateManager:
         title: str,
         raw_text: str,
         raw_hash: str,
-        published_at: Optional[str] = None,
-    ) -> Optional[int]:
+        published_at: str | None = None,
+    ) -> int | None:
         """Добавляет элемент в очередь. Возвращает ID новой записи или None, если уже существует."""
         conn = self.connect()
         try:
@@ -446,7 +446,7 @@ class StateManager:
             conn.rollback()
             return None
 
-    def get_queue_item(self, queue_id: int) -> Optional[dict]:
+    def get_queue_item(self, queue_id: int) -> dict | None:
         """Возвращает запись raw_queue по id."""
         conn = self.connect()
         row = conn.execute(
@@ -456,7 +456,7 @@ class StateManager:
 
     def get_queue_item_by_external(
         self, source_id: str, external_id: str
-    ) -> Optional[dict]:
+    ) -> dict | None:
         """Возвращает запись raw_queue по паре (source_id, external_id)."""
         conn = self.connect()
         row = conn.execute(
@@ -497,7 +497,7 @@ class StateManager:
         ).fetchall()
         return [dict(row) for row in rows]
 
-    def get_next_new(self) -> Optional[dict]:
+    def get_next_new(self) -> dict | None:
         conn = self.connect()
         row = conn.execute(
             """
@@ -534,7 +534,7 @@ class StateManager:
         self,
         queue_id: int,
         error: str,
-        next_retry_at: Optional[str] = None,
+        next_retry_at: str | None = None,
         *,
         backoff: bool = True,
     ) -> None:
@@ -571,7 +571,7 @@ class StateManager:
     def claim_next(
         self,
         lease_seconds: int = 300,
-    ) -> Optional[dict]:
+    ) -> dict | None:
         """Атоматически захватывает задание для обработки.
 
         Выбирает элемент в состоянии 'new', либо 'processing'/'failed'
@@ -646,15 +646,15 @@ class StateManager:
         topic: str,
         content: str,
         *,
-        source_id: Optional[str] = None,
-        external_id: Optional[str] = None,
-        canonical_url: Optional[str] = None,
-        file_path: Optional[str] = None,
-        content_hash: Optional[str] = None,
+        source_id: str | None = None,
+        external_id: str | None = None,
+        canonical_url: str | None = None,
+        file_path: str | None = None,
+        content_hash: str | None = None,
         revision: int = 1,
         is_private: int = 0,
         is_archived: int = 0,
-        conn: Optional[sqlite3.Connection] = None,
+        conn: sqlite3.Connection | None = None,
     ) -> None:
         """Индексирует заметку в обе таблицы (notes + notes_fts) в одной транзакции.
 
@@ -751,11 +751,11 @@ class StateManager:
         note_id: str,
         raw_content: str,
         *,
-        source_id: Optional[str] = None,
-        external_id: Optional[str] = None,
-        canonical_url: Optional[str] = None,
-        raw_hash: Optional[str] = None,
-        conn: Optional[sqlite3.Connection] = None,
+        source_id: str | None = None,
+        external_id: str | None = None,
+        canonical_url: str | None = None,
+        raw_hash: str | None = None,
+        conn: sqlite3.Connection | None = None,
     ) -> None:
         """Сохраняет/обновляет исходное содержимое заметки, привязанное к note_id.
 
@@ -789,7 +789,7 @@ class StateManager:
                 c.rollback()
             raise
 
-    def get_raw_content(self, note_id: str) -> Optional[dict]:
+    def get_raw_content(self, note_id: str) -> dict | None:
         """Возвращает исходное содержимое заметки по note_id или None."""
         conn = self.connect()
         row = conn.execute(
@@ -797,7 +797,7 @@ class StateManager:
         ).fetchone()
         return dict(row) if row else None
 
-    def get_note_by_external(self, source_id: str, external_id: str) -> Optional[dict]:
+    def get_note_by_external(self, source_id: str, external_id: str) -> dict | None:
         """Находит существующую заметку по паре (source_id, external_id).
 
         Используется для идемпотентного обновления: при повторном сборе
@@ -817,7 +817,7 @@ class StateManager:
         return dict(row) if row else None
 
     def list_queue(
-        self, state: Optional[str] = None, limit: int = 100
+        self, state: str | None = None, limit: int = 100
     ) -> list[dict]:
         """Возвращает элементы raw_queue, опционально отфильтрованные по состоянию.
 
@@ -1000,17 +1000,17 @@ class StateManager:
 
     def save_generation_log(
         self,
-        note_id: Optional[str],
+        note_id: str | None,
         operation: str,
         model: str,
         *,
-        prompt_name: Optional[str] = None,
-        prompt_version: Optional[int] = None,
+        prompt_name: str | None = None,
+        prompt_version: int | None = None,
         prompt_tokens: int = 0,
         completion_tokens: int = 0,
         latency_ms: float = 0.0,
         cost_usd: float = 0.0,
-        conn: Optional[sqlite3.Connection] = None,
+        conn: sqlite3.Connection | None = None,
     ) -> int:
         """Записывает метаданные одной генерации (модель, промпт, токены,
         задержка, стоимость) в generation_log."""
@@ -1078,11 +1078,11 @@ class StateManager:
         query: str,
         limit: int = 10,
         *,
-        source_id: Optional[str] = None,
-        topic: Optional[str] = None,
-        tags: Optional[list[str]] = None,
-        date_from: Optional[str] = None,
-        date_to: Optional[str] = None,
+        source_id: str | None = None,
+        topic: str | None = None,
+        tags: list[str] | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
         include_archived: bool = False,
         include_private: bool = True,
         offset: int = 0,
@@ -1155,7 +1155,7 @@ class StateManager:
             return []
         return [dict(row) for row in rows]
 
-    def get_note(self, note_id: str) -> Optional[dict]:
+    def get_note(self, note_id: str) -> dict | None:
         """Возвращает заметку по ID.
 
         Метаданные берутся из канонической таблицы ``notes``, содержимое —
@@ -1207,9 +1207,9 @@ class StateManager:
         *,
         prompt_type: str = "search",
         is_active: bool = False,
-        approved_by: Optional[str] = None,
-        reverted_from: Optional[int] = None,
-        conn: Optional[sqlite3.Connection] = None,
+        approved_by: str | None = None,
+        reverted_from: int | None = None,
+        conn: sqlite3.Connection | None = None,
     ) -> int:
         c = conn or self.connect()
         own = conn is None
@@ -1234,8 +1234,8 @@ class StateManager:
         return cur.lastrowid
 
     def get_active_prompt(
-        self, prompt_name: str, prompt_type: Optional[str] = None
-    ) -> Optional[dict]:
+        self, prompt_name: str, prompt_type: str | None = None
+    ) -> dict | None:
         conn = self.connect()
         if prompt_type is not None:
             row = conn.execute(
@@ -1259,7 +1259,7 @@ class StateManager:
 
     def seed_prompt_from_file(
         self, prompt_name: str, prompt_path: Path, prompt_type: str = "search"
-    ) -> Optional[dict]:
+    ) -> dict | None:
         """Заводит версию 1 промпта из файла, если активной версии ещё нет.
 
         Нужен, чтобы `prompt_history` не оставалась пустой: без этого
@@ -1294,7 +1294,7 @@ class StateManager:
         prompt_name: str,
         content: str,
         prompt_type: str = "search",
-    ) -> Optional[dict]:
+    ) -> dict | None:
         """Заводит версию 1 промпта из строки, если активной версии ещё нет.
 
         Аналог ``seed_prompt_from_file``, но принимает содержимое промпта
@@ -1338,8 +1338,8 @@ class StateManager:
         source_type: str,
         channel: str,
         enabled: bool = True,
-        conn: Optional[sqlite3.Connection] = None,
-    ) -> Optional[int]:
+        conn: sqlite3.Connection | None = None,
+    ) -> int | None:
         """Добавляет новый источник. Возвращает ID записи или None, если уже существует."""
         c = conn or self.connect()
         own = conn is None
@@ -1359,7 +1359,7 @@ class StateManager:
                 c.rollback()
             return None
 
-    def get_source(self, source_id: str) -> Optional[dict]:
+    def get_source(self, source_id: str) -> dict | None:
         conn = self.connect()
         row = conn.execute("SELECT * FROM sources WHERE source_id = ?", (source_id,)).fetchone()
         return dict(row) if row else None
@@ -1374,7 +1374,7 @@ class StateManager:
             rows = conn.execute("SELECT * FROM sources ORDER BY added_at").fetchall()
         return [dict(row) for row in rows]
 
-    def set_source_enabled(self, source_id: str, enabled: bool, conn: Optional[sqlite3.Connection] = None) -> bool:
+    def set_source_enabled(self, source_id: str, enabled: bool, conn: sqlite3.Connection | None = None) -> bool:
         c = conn or self.connect()
         own = conn is None
         cur = c.execute(
@@ -1389,7 +1389,7 @@ class StateManager:
             c.commit()
         return cur.rowcount > 0
 
-    def remove_source(self, source_id: str, conn: Optional[sqlite3.Connection] = None) -> bool:
+    def remove_source(self, source_id: str, conn: sqlite3.Connection | None = None) -> bool:
         c = conn or self.connect()
         own = conn is None
         cur = c.execute("DELETE FROM sources WHERE source_id = ?", (source_id,))
@@ -1404,12 +1404,12 @@ class StateManager:
         proposal_id: str,
         target: str,
         target_name: str,
-        current_version: Optional[int],
-        proposed_version: Optional[int],
+        current_version: int | None,
+        proposed_version: int | None,
         diff: str,
         reason: str,
-        eval_set_id: Optional[str] = None,
-        conn: Optional[sqlite3.Connection] = None,
+        eval_set_id: str | None = None,
+        conn: sqlite3.Connection | None = None,
     ) -> None:
         """Сохраняет предложение улучшения в таблицу prompt_proposals."""
         c = conn or self.connect()
@@ -1440,7 +1440,7 @@ class StateManager:
                 c.rollback()
             raise
 
-    def get_proposal(self, proposal_id: str) -> Optional[dict]:
+    def get_proposal(self, proposal_id: str) -> dict | None:
         """Возвращает предложение по ID или None."""
         conn = self.connect()
         row = conn.execute(
@@ -1468,7 +1468,7 @@ class StateManager:
     def update_proposal(
         self,
         proposal_id: str,
-        conn: Optional[sqlite3.Connection] = None,
+        conn: sqlite3.Connection | None = None,
         **fields: object,
     ) -> bool:
         """Обновляет поля предложения (status, test_passed, confirmed_at и т.п.)."""
@@ -1496,7 +1496,7 @@ class StateManager:
         prompt_name: str,
         version: int,
         confirmed_by: str = "user",
-        conn: Optional[sqlite3.Connection] = None,
+        conn: sqlite3.Connection | None = None,
     ) -> bool:
         """Атомарно активирует версию промпта: снимает is_active со старых и
         ставит её на указанную в одной транзакции.

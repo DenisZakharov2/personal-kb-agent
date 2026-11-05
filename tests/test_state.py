@@ -2,10 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
-from kb_agent.storage.state import StateManager
-
 
 class TestStateConnectPragmas:
     def test_connect_sets_wal_and_busy_timeout(self, config, state):

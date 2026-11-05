@@ -36,8 +36,9 @@ class TestMcpCapabilities:
         """P1-02: вызов kb_confirm_change через tools/call возвращает unknown_tool."""
         import asyncio
 
-        import kb_agent.agents.mcp_server as mcp_server_mod
         from mcp.types import CallToolResult
+
+        import kb_agent.agents.mcp_server as mcp_server_mod
 
         monkeypatch.setattr(mcp_server_mod, "load_config", lambda: config)
 

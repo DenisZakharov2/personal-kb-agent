@@ -15,7 +15,7 @@ from __future__ import annotations
 import os
 from importlib import resources as importlib_resources
 from pathlib import Path
-from typing import Optional, Self
+from typing import Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -66,7 +66,7 @@ def _read_env_file(path: Path) -> dict[str, str]:
     return env_vars
 
 
-def _resource_path(package: str, resource_name: str) -> Optional[Path]:
+def _resource_path(package: str, resource_name: str) -> Path | None:
     """Возвращает путь к упакованному ресурсу через importlib.resources."""
     try:
         # importlib.resources.files().joinpath() возвращает Traversable,
@@ -85,7 +85,7 @@ def _resource_path(package: str, resource_name: str) -> Optional[Path]:
         return None
 
 
-def read_resource_text(package: str, resource_name: str) -> Optional[str]:
+def read_resource_text(package: str, resource_name: str) -> str | None:
     """Читает содержимое упакованного ресурса в виде строки.
 
     Работает как с файлами на диске (режим разработки), так и с ресурсами
@@ -102,20 +102,20 @@ def read_resource_text(package: str, resource_name: str) -> Optional[str]:
 class AppConfig(BaseModel):
     """Основная конфигурация приложения."""
 
-    vault_path: Optional[Path] = Field(
+    vault_path: Path | None = Field(
         default=None, description="Путь к Obsidian vault (по умолчанию data_dir/vault)"
     )
     data_dir: Path = Field(default=DEFAULT_DATA_DIR, description="Каталог данных приложения")
-    db_path: Optional[Path] = Field(
+    db_path: Path | None = Field(
         default=None, description="Путь к SQLite базе состояния (по умолчанию data_dir/state.db)"
     )
-    sources_path: Optional[Path] = Field(
+    sources_path: Path | None = Field(
         default=None, description="Путь к sources.yaml (по умолчанию data_dir/sources.yaml)"
     )
-    profile_path: Optional[Path] = Field(
+    profile_path: Path | None = Field(
         default=None, description="Путь к user_profile.yaml (по умолчанию data_dir/user_profile.yaml)"
     )
-    log_path: Optional[Path] = Field(
+    log_path: Path | None = Field(
         default=None, description="Путь к лог-файлу (по умолчанию data_dir/kb_agent.log)"
     )
     prompts_dir: Path = Field(default=DEFAULT_PROMPTS_DIR, description="Каталог с промптами")
@@ -124,7 +124,7 @@ class AppConfig(BaseModel):
     llm_provider: str = Field(
         default="openai", description="Провайдер: openai, kimi, anthropic, ollama, openrouter, custom"
     )
-    openai_api_key: Optional[str] = Field(default=None, description="API-ключ LLM-провайдера")
+    openai_api_key: str | None = Field(default=None, description="API-ключ LLM-провайдера")
     openai_base_url: str = Field(default="https://api.openai.com/v1", description="Базовый URL API провайдера")
     openai_model: str = Field(default="gpt-4o-mini", description="Модель LLM")
     openai_temperature: float = Field(default=0.3, description="Температура модели")
@@ -208,7 +208,7 @@ class AppConfig(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
-def load_config(env_file: Optional[str] = None) -> AppConfig:
+def load_config(env_file: str | None = None) -> AppConfig:
     """Загружает конфигурацию.
 
     Приоритет: переменные окружения > файл .env (явный) > стандартный .env > значения по умолчанию.
@@ -267,7 +267,7 @@ def load_config(env_file: Optional[str] = None) -> AppConfig:
     return config
 
 
-def get_prompt_path(prompt_name: str) -> Optional[Path]:
+def get_prompt_path(prompt_name: str) -> Path | None:
     """Возвращает путь к упакованному промпту через importlib.resources.
 
     Сначала ищет в kb_agent.resources/prompts, затем в config/prompts
@@ -283,7 +283,7 @@ def get_prompt_path(prompt_name: str) -> Optional[Path]:
     return None
 
 
-def get_prompt_text(prompt_name: str, config: Optional[AppConfig] = None) -> Optional[str]:
+def get_prompt_text(prompt_name: str, config: AppConfig | None = None) -> str | None:
     """Читает содержимое промпта.
 
     Приоритет:

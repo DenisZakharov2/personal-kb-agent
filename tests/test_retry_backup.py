@@ -7,8 +7,8 @@ import zipfile
 
 from typer.testing import CliRunner
 
-from kb_agent.cli.main import app
 import kb_agent.cli.commands.process as process_mod
+from kb_agent.cli.main import app
 
 
 def _insert_queue(

@@ -8,10 +8,11 @@
 from __future__ import annotations
 
 import hashlib
-import yaml
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+
+import yaml
 
 from kb_agent.config import AppConfig
 from kb_agent.storage.state import StateManager

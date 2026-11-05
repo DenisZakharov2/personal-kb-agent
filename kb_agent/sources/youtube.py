@@ -14,7 +14,6 @@ import tempfile
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Optional
 
 from kb_agent.storage.state import StateManager
 from kb_agent.utils.logger import setup_logger
@@ -38,7 +37,7 @@ def _ensure_yt_dlp() -> None:
         )
 
 
-def _fetch_channel_videos(channel_url: str, max_videos: Optional[int] = None) -> list[dict]:
+def _fetch_channel_videos(channel_url: str, max_videos: int | None = None) -> list[dict]:
     """Скачивает метаданные видео канала через yt-dlp (без Shorts, без загрузки видео)."""
     # Ограничиваем количество видео через --playlist-end для производительности
     playlist_end = max_videos * 3 if max_videos and max_videos > 0 else 30
@@ -118,7 +117,7 @@ def _download_subs(
     lang: str,
     *,
     write_auto: bool,
-) -> Optional[str]:
+) -> str | None:
     """Скачивает субтитры одного языка (ручные или автоматические).
 
     ``write_auto=True`` запрашивает автоматические субтитры YouTube
@@ -186,7 +185,7 @@ def _download_subs(
     return None
 
 
-def _fetch_transcript(video_id: str, video_url: str, langs: list[str]) -> Optional[str]:
+def _fetch_transcript(video_id: str, video_url: str, langs: list[str]) -> str | None:
     """Скачивает субтитры видео: сначала ручные, потом автоматические.
 
     Временная директория удаляется автоматически после завершения.
@@ -228,7 +227,7 @@ def _collect_one_channel(
     langs: list[str],
     months: int,
     limit: int,
-    source_id: Optional[str] = None,
+    source_id: str | None = None,
 ) -> dict:
     """Внутренняя функция сбора одного канала."""
     if source_id is None:

@@ -7,17 +7,15 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-import pytest
+from typer.testing import CliRunner
 
 from kb_agent.cli.commands.process import app as process_app
 from kb_agent.core.relevance import RelevanceGate
-from kb_agent.processing.pipeline import Pipeline
 from kb_agent.processing.llm_client import SummaryData
+from kb_agent.processing.pipeline import Pipeline
 from kb_agent.storage.state import StateManager
-from typer.testing import CliRunner
 
 
 class TestQueueNoteId:

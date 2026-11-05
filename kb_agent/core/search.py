@@ -6,16 +6,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
 
 from kb_agent.config import AppConfig
 from kb_agent.core.prompts import (
-    ANSWER_PROMPT_NAME,
     DEFAULT_PROMPT_NAME,
     get_active_system_prompt,
 )
 from kb_agent.processing.llm_client import LLMClient
-from kb_agent.storage.state import StateManager, _WORD_RE
+from kb_agent.storage.state import _WORD_RE, StateManager
 from kb_agent.utils.logger import setup_logger
 
 logger = setup_logger("kb_agent.core.search")
@@ -43,14 +41,14 @@ class SearchResult:
     # Релевантный фрагмент вокруг совпадения запроса (P2-11).
     snippet: str = ""
     # Смещение фрагмента в исходном контенте (start, end) для цитирования.
-    snippet_offset: Optional[tuple[int, int]] = None
+    snippet_offset: tuple[int, int] | None = None
     # Поля provenience (из таблицы notes): источник, путь, версия и hash.
-    canonical_url: Optional[str] = None
-    source_id: Optional[str] = None
-    external_id: Optional[str] = None
-    file_path: Optional[str] = None
-    content_hash: Optional[str] = None
-    revision: Optional[int] = None
+    canonical_url: str | None = None
+    source_id: str | None = None
+    external_id: str | None = None
+    file_path: str | None = None
+    content_hash: str | None = None
+    revision: int | None = None
     # Метка приватности / чувствительности (6.2)
     is_private: bool = False
     sensitivity: str = "public"
@@ -103,7 +101,7 @@ def chunk_text(
 
 def _make_snippet(
     content: str, query_terms: list[str], window: int = SNIPPET_WINDOW
-) -> tuple[str, Optional[tuple[int, int]]]:
+) -> tuple[str, tuple[int, int] | None]:
     """Возвращает (фрагмент, (start, end)) вокруг первого совпадения запроса.
 
     Если ни один термин не найден — возвращает начало контента.
@@ -113,7 +111,7 @@ def _make_snippet(
         snippet = content[:window] if content else ""
         return snippet, (0, len(snippet)) if snippet else None
     lower = content.lower()
-    best_pos: Optional[int] = None
+    best_pos: int | None = None
     for term in query_terms:
         pos = lower.find(term.lower())
         if pos != -1 and (best_pos is None or pos < best_pos):
@@ -137,7 +135,7 @@ class SearchResponse:
 
     query: str
     results: list[SearchResult] = field(default_factory=list)
-    answer: Optional[str] = None
+    answer: str | None = None
     sources: list[str] = field(default_factory=list)
     enough_data: bool = True
 
@@ -155,11 +153,11 @@ class SearchEngine:
         query: str,
         limit: int = 5,
         *,
-        source_id: Optional[str] = None,
-        topic: Optional[str] = None,
-        tags: Optional[list[str]] = None,
-        date_from: Optional[str] = None,
-        date_to: Optional[str] = None,
+        source_id: str | None = None,
+        topic: str | None = None,
+        tags: list[str] | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
         include_archived: bool = False,
         include_private: bool = True,
         offset: int = 0,
@@ -188,7 +186,7 @@ class SearchEngine:
         )
         query_terms = _WORD_RE.findall(query or "")
         results: list[SearchResult] = []
-        best_rank: Optional[float] = None
+        best_rank: float | None = None
         for row in rows:
             rank = row.get("rank")
             if isinstance(rank, (int, float)):
@@ -340,7 +338,7 @@ def _extract_cited_ids(text: str) -> list[str]:
 def validate_search_answer(
     answer: str,
     results: list[SearchResult],
-    forbidden_phrases: Optional[list[str]] = None,
+    forbidden_phrases: list[str] | None = None,
 ) -> SearchAnswerValidation:
     """Валидация структуры ответа поиска (валидация вывода LLM).
 

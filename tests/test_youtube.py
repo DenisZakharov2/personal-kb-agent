@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from kb_agent.sources.youtube import _fetch_transcript, _collect_one_channel, _ensure_yt_dlp
+from kb_agent.sources.youtube import _collect_one_channel, _ensure_yt_dlp, _fetch_transcript
 
 
 class TestYouTubeNameError:

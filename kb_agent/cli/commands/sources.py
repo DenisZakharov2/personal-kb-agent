@@ -15,10 +15,10 @@ from __future__ import annotations
 
 import typer
 
+from kb_agent.cli.output import output_json as _output_json
 from kb_agent.config import load_config
 from kb_agent.sources.registry import SourceConfig, SourceRegistry, normalize_source
 from kb_agent.utils.logger import setup_logger
-from kb_agent.cli.output import output_json as _output_json
 
 app = typer.Typer(help="Управление источниками данных (Этап 4/5)")
 logger = setup_logger("kb_agent.cli.sources")
@@ -148,7 +148,7 @@ def sources_add(
             if json_output:
                 _output_json(result)
             else:
-                typer.echo(f"✓ Источник добавлен:")
+                typer.echo("✓ Источник добавлен:")
                 typer.echo(f"  source_id: {source_id}")
                 typer.echo(f"  тип: {source_type}")
                 typer.echo(f"  URL: {url}")

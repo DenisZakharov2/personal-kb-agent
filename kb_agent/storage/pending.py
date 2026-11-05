@@ -11,7 +11,6 @@ import hashlib
 import json
 import sqlite3
 from datetime import datetime, timedelta, timezone
-from typing import Optional
 
 import yaml
 
@@ -50,9 +49,9 @@ class PendingManager:
         entity_id: str,
         parameters: dict,
         *,
-        diff: Optional[str] = None,
-        created_by: Optional[str] = None,
-        ttl_seconds: Optional[int] = None,
+        diff: str | None = None,
+        created_by: str | None = None,
+        ttl_seconds: int | None = None,
     ) -> str:
         """Создаёт pending-запрос. Возвращает change_id.
 
@@ -71,7 +70,7 @@ class PendingManager:
         import uuid
 
         change_id = str(uuid.uuid4())
-        expires_at: Optional[str] = None
+        expires_at: str | None = None
         if ttl_seconds is not None:
             expires_at = (
                 datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds)
@@ -118,7 +117,7 @@ class PendingManager:
         )
         return change_id
 
-    def get_change(self, change_id: str) -> Optional[dict]:
+    def get_change(self, change_id: str) -> dict | None:
         """Возвращает pending-запрос по change_id или None."""
         conn = self.state.connect()
         row = conn.execute(
@@ -254,7 +253,7 @@ class PendingManager:
             logger.exception("Ошибка подтверждения pending-запроса %s", change_id)
             raise
 
-    def reject_change(self, change_id: str, reason: Optional[str] = None) -> bool:
+    def reject_change(self, change_id: str, reason: str | None = None) -> bool:
         """Отклоняет pending-запрос со статусом rejected и записью причины."""
         conn = self.state.connect()
         cur = conn.execute(
@@ -270,7 +269,7 @@ class PendingManager:
             logger.info("Pending-запрос %s отклонён (причина: %s)", change_id, reason)
         return cur.rowcount > 0
 
-    def expire_pending(self, now: Optional[str] = None) -> int:
+    def expire_pending(self, now: str | None = None) -> int:
         """Переводит истёкшие по TTL pending-запросы в статус ``expired``.
 
         Возвращает количество переведённых записей. Предложение со статусом
@@ -399,7 +398,7 @@ class PendingManager:
         return False
 
     def _save_result(
-        self, change_id: str, result: dict, conn: Optional[sqlite3.Connection] = None
+        self, change_id: str, result: dict, conn: sqlite3.Connection | None = None
     ) -> None:
         c = conn or self.state.connect()
         c.execute(
@@ -434,7 +433,7 @@ class PendingManager:
         logger.info("Профиль обновлён: %s", profile_path)
 
     def _revert_prompt(
-        self, parameters: dict, conn: Optional[sqlite3.Connection] = None
+        self, parameters: dict, conn: sqlite3.Connection | None = None
     ) -> None:
         """Откатывает промпт к указанной (или предыдущей) версии."""
         c = conn or self.state.connect()

@@ -8,14 +8,12 @@ from __future__ import annotations
 
 import asyncio
 
-import pytest
+from mcp.types import CallToolResult
 
-from kb_agent.agents.mcp_server import handle_call_tool, handle_list_tools
+from kb_agent.agents.mcp_server import handle_call_tool
 from kb_agent.config import AppConfig
 from kb_agent.core.search import SearchEngine
 from kb_agent.processing.llm_client import LLMClient
-from kb_agent.storage.state import StateManager
-from mcp.types import CallToolResult
 
 
 def _is_error_result(result) -> bool:

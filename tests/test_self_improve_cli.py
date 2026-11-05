@@ -10,8 +10,8 @@ import json
 
 from typer.testing import CliRunner
 
-from kb_agent.cli.main import app
 import kb_agent.cli.commands.self_improve as si_mod
+from kb_agent.cli.main import app
 
 
 def _invoke(config, monkeypatch, args, json_output=True):

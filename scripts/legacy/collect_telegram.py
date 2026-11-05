@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Сборщик постов из Telegram-каналов (этап 1 двухэтапного сбора).
 
@@ -21,9 +20,10 @@ import json
 import os
 import re
 import sys
+from pathlib import Path
+
 import requests
 from bs4 import BeautifulSoup
-from pathlib import Path
 
 DEFAULT_CHANNELS = ["ragnarokzone", "paragonzone", "rubiconzone"]
 DEFAULT_LIMIT = 10

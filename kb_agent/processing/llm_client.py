@@ -15,7 +15,6 @@ import json
 import re
 import time
 from dataclasses import dataclass
-from typing import Optional
 
 import httpx
 from pydantic import BaseModel, Field, ValidationError
@@ -65,7 +64,7 @@ class LLMResponse:
     prompt_tokens: int
     completion_tokens: int
     latency_ms: float
-    error: Optional[str] = None
+    error: str | None = None
 
 
 class LLMClient:
@@ -83,7 +82,7 @@ class LLMClient:
         self.max_retries = max(0, int(getattr(config, "llm_max_retries", 2)))
         # Ответ последнего вызова complete(): нужна для записи generation_log
         # (токены, задержка, модель) без изменения сигнатуры методов.
-        self.last_response: Optional[LLMResponse] = None
+        self.last_response: LLMResponse | None = None
 
         # Локальные провайдеры (Ollama и т.п.) не требуют API-ключа
         if not self.api_key and self.provider not in ("ollama", "local", "custom"):
@@ -105,9 +104,9 @@ class LLMClient:
         self,
         messages: list[dict[str, str]],
         *,
-        model: Optional[str] = None,
-        temperature: Optional[float] = None,
-        max_tokens: Optional[int] = None,
+        model: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
     ) -> LLMResponse:
         """Отправляет запрос к LLM API и возвращает ответ.
 
@@ -182,7 +181,7 @@ class LLMClient:
                     latency_ms=latency_ms,
                 )
                 return self.last_response
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 last_error = str(exc)
                 if attempt + 1 < attempts:
                     logger.warning(
@@ -218,8 +217,8 @@ class LLMClient:
         raw_text: str,
         source_type: str,
         source_name: str,
-        topics: Optional[list[str]] = None,
-        system_prompt: Optional[str] = None,
+        topics: list[str] | None = None,
+        system_prompt: str | None = None,
     ) -> LLMResponse:
         """Суммаризирует сырой текст в структурированную заметку."""
         topics_hint = ""
@@ -262,8 +261,8 @@ class LLMClient:
         raw_text: str,
         source_type: str,
         source_name: str,
-        topics: Optional[list[str]] = None,
-        system_prompt: Optional[str] = None,
+        topics: list[str] | None = None,
+        system_prompt: str | None = None,
     ) -> SummaryData:
         """Суммаризирует текст в структурированный результат по JSON-схеме.
 

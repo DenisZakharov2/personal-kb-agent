@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from kb_agent.config import AppConfig
 from kb_agent.storage.catalog import CatalogGenerator
 from kb_agent.storage.vault import VaultManager

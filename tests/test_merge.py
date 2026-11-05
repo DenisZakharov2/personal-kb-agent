@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 
-import pytest
 from typer.testing import CliRunner
 
 from kb_agent.cli.main import app

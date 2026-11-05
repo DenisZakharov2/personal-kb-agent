@@ -14,25 +14,24 @@ additionalProperties: false, перечисления, аннотации), чи
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Optional
+from typing import Any
 
 from mcp.server import Server
 from mcp.server.models import InitializationOptions
 from mcp.server.stdio import stdio_server
 from mcp.types import (
     CallToolResult,
+    ServerCapabilities,
     TextContent,
     Tool,
     ToolAnnotations,
-    ServerCapabilities,
     ToolsCapability,
 )
-
 from pydantic import BaseModel, Field, ValidationError
 
 from kb_agent.config import load_config
-from kb_agent.core.search import SearchEngine
 from kb_agent.core.insights import InsightsEngine
+from kb_agent.core.search import SearchEngine
 from kb_agent.processing.llm_client import LLMClient
 from kb_agent.sources.registry import SOURCE_TYPES, SourceRegistry, normalize_source
 from kb_agent.storage.pending import PendingManager
@@ -90,17 +89,17 @@ class SearchItem(BaseModel):
     title: str = Field(description="Заголовок")
     snippet: str = Field(default="", description="Релевантный фрагмент вокруг совпадения")
     score: float = Field(default=0.0, description="Релевантность (0.0 - 1.0, выше — лучше)")
-    source_id: Optional[str] = Field(default=None, description="Идентификатор источника")
-    external_id: Optional[str] = Field(default=None, description="Внешний идентификатор")
-    canonical_url: Optional[str] = Field(default=None, description="URL источника")
-    file_path: Optional[str] = Field(default=None, description="Путь к файлу в vault")
+    source_id: str | None = Field(default=None, description="Идентификатор источника")
+    external_id: str | None = Field(default=None, description="Внешний идентификатор")
+    canonical_url: str | None = Field(default=None, description="URL источника")
+    file_path: str | None = Field(default=None, description="Путь к файлу в vault")
     topic: str = Field(default="", description="Тема заметки")
     tags: list[str] = Field(default_factory=list, description="Теги")
-    revision: Optional[int] = Field(default=None, description="Ревизия заметки")
-    content_hash: Optional[str] = Field(default=None, description="Хэш содержимого")
+    revision: int | None = Field(default=None, description="Ревизия заметки")
+    content_hash: str | None = Field(default=None, description="Хэш содержимого")
     # Превью содержимого заметки (первые 500 символов) — чтобы внешний агент
     # мог ответить по существу без лишнего kb_get_note (R-06).
-    content_preview: Optional[str] = Field(
+    content_preview: str | None = Field(
         default=None, description="Превью содержимого заметки (до 500 символов)"
     )
     # Метаданные происхождения (6.1)
@@ -123,7 +122,7 @@ class SearchOutput(BaseModel):
     """Структурированный ответ kb_search."""
 
     items: list[SearchItem] = Field(default_factory=list, description="Найденные заметки")
-    next_cursor: Optional[int] = Field(default=None, description="Курсор для следующей страницы")
+    next_cursor: int | None = Field(default=None, description="Курсор для следующей страницы")
     total: int = Field(default=0, description="Количество найденных")
 
 
@@ -135,12 +134,12 @@ class NoteOutput(BaseModel):
     content: str
     tags: str = ""
     topic: str = ""
-    source_id: Optional[str] = None
-    external_id: Optional[str] = None
-    canonical_url: Optional[str] = None
-    file_path: Optional[str] = None
-    content_hash: Optional[str] = None
-    revision: Optional[int] = None
+    source_id: str | None = None
+    external_id: str | None = None
+    canonical_url: str | None = None
+    file_path: str | None = None
+    content_hash: str | None = None
+    revision: int | None = None
     # Метаданные происхождения (6.1)
     untrusted_content: bool = Field(
         default=False,
@@ -228,7 +227,7 @@ _WRITE_ANNOTATIONS = ToolAnnotations(
 )
 
 
-def _read_only_tool(name: str, description: str, input_schema: dict, output_schema: Optional[dict] = None) -> Tool:
+def _read_only_tool(name: str, description: str, input_schema: dict, output_schema: dict | None = None) -> Tool:
     return Tool(
         name=name,
         description=description,
@@ -406,7 +405,7 @@ def _ok_text(text: str) -> list[TextContent]:
 
 
 @app.call_tool()
-async def handle_call_tool(name: str, arguments: Optional[dict[str, Any]]) -> Any:
+async def handle_call_tool(name: str, arguments: dict[str, Any] | None) -> Any:
     """Вызов инструмента.
 
     Возвращает либо CallToolResult (ошибки), либо словарь со структурированным
@@ -855,7 +854,7 @@ async def handle_call_tool(name: str, arguments: Optional[dict[str, Any]]) -> An
 
     except ValidationError as exc:
         return _error_result("validation_error", str(exc))
-    except Exception:  # noqa: BLE001
+    except Exception:
         logger.exception("Ошибка вызова MCP-инструмента %s", name)
         return _error_result("internal_error", f"Внутренняя ошибка инструмента {name}")
     finally:

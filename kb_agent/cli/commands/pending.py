@@ -6,13 +6,14 @@ kb-agent pending — показать список pending-запросов (о�
 from __future__ import annotations
 
 import json
+
 import typer
 
+from kb_agent.cli.output import output_json as _output_json
 from kb_agent.config import load_config
 from kb_agent.storage.pending import PendingManager
 from kb_agent.storage.state import StateManager
 from kb_agent.utils.logger import setup_logger
-from kb_agent.cli.output import output_json as _output_json
 
 logger = setup_logger("kb_agent.cli.pending")
 

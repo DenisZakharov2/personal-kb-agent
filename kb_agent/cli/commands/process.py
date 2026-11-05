@@ -12,23 +12,20 @@ kb-agent backup         — экспорт SQLite + vault в архив
 from __future__ import annotations
 
 import hashlib
-import json
-import sqlite3
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
 import typer
 import yaml
 
+from kb_agent.cli.output import output_json as _output_json
 from kb_agent.config import load_config
 from kb_agent.processing.pipeline import Pipeline, run_digest
 from kb_agent.sources.registry import SourceRegistry
 from kb_agent.storage.state import StateManager
 from kb_agent.storage.vault import VaultManager
 from kb_agent.utils.logger import setup_logger
-from kb_agent.cli.output import output_json as _output_json
 
 app = typer.Typer(help="Конвейер наполнения базы знаний")
 
@@ -54,7 +51,7 @@ def process_run(
     try:
         config = load_config()
         pipeline = Pipeline(config)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         # Критическая ошибка конфигурации — exit code 2.
         logger.exception("Критическая ошибка конфигурации")
         if json_output:
@@ -247,7 +244,7 @@ def process_reindex(
             _output_json(result)
         else:
             typer.echo(f"Reindex завершён: проиндексировано {indexed} заметок.")
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.exception("Ошибка reindex")
         state.close()
         if json_output:
@@ -368,7 +365,7 @@ def process_doctor(
                 for item in data.get("sources", []) or []:
                     if isinstance(item, dict) and item.get("id"):
                         yaml_source_ids.add(item["id"])
-            except yaml.YAMLError as exc:  # noqa: BLE001
+            except yaml.YAMLError as exc:
                 logger.warning("Не удалось прочитать sources.yaml: %s", exc)
         sqlite_source_ids = {
             row["source_id"] for row in conn.execute("SELECT source_id FROM sources").fetchall()
@@ -413,13 +410,13 @@ def process_doctor(
             "sources": sources_health,
             "kinds": {
                 kind: sum(1 for i in issues if i["kind"] == kind)
-                for kind in {
+                for kind in (
                     "orphan_file",
                     "fts_without_file",
                     "stuck_processing",
                     "failed_without_retry",
                     "source_mismatch",
-                }
+                )
             },
         }
         if json_output:
@@ -447,7 +444,7 @@ def process_doctor(
                         typer.echo(f"    Последняя проверка: {s['last_checked']}")
                     if s["last_updated"]:
                         typer.echo(f"    Последнее обновление: {s['last_updated']}")
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.exception("Ошибка doctor")
         state.close()
         if json_output:
@@ -501,7 +498,7 @@ def process_retry(
             else:
                 typer.echo(f"Элемент очереди {queue_id} не найден.")
                 raise typer.Exit(code=1)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.exception("Ошибка retry")
         state.close()
         if json_output:
@@ -558,7 +555,7 @@ def process_skipped(
         ).fetchall()
         items = [dict(row) for row in rows]
         state_mgr.close()
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.exception("Ошибка skipped")
         try:
             state_mgr.close()
@@ -754,7 +751,7 @@ def process_reconcile(
                     typer.echo(f"  {kind}: {number}")
             if not issues and not fixed:
                 typer.echo("Несоответствий не найдено.")
-    except Exception:  # noqa: BLE001
+    except Exception:
         logger.exception("Ошибка reconcile")
         state.close()
         if json_output:
@@ -766,7 +763,7 @@ def process_reconcile(
 
 @app.command("backup")
 def process_backup(
-    output: Optional[str] = typer.Option(
+    output: str | None = typer.Option(
         None,
         "--output",
         "-o",
@@ -804,7 +801,7 @@ def process_backup(
             _output_json(result)
         else:
             typer.echo(f"✓ Резервная копия создана: {zip_path}")
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.exception("Ошибка backup")
         try:
             state.close()

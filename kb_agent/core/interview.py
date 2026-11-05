@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 import yaml
 
@@ -50,7 +49,7 @@ class InterviewManager:
         ),
     ]
 
-    def ask(self, question: str, default: Optional[str] = None) -> str:
+    def ask(self, question: str, default: str | None = None) -> str:
         from rich.prompt import Prompt
         prompt_text = question
         if default:
@@ -82,7 +81,7 @@ class InterviewManager:
         )
         return self.profile_path
 
-    def load_profile(self) -> Optional[dict]:
+    def load_profile(self) -> dict | None:
         if not self.profile_path.exists():
             return None
         try:

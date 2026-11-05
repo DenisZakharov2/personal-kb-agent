@@ -25,11 +25,11 @@ kb-agent mcp-serve
 - Конфиг источников: `data/sources.yaml` (шаблон — `config/sources.example.yaml`)
 - Профиль: `data/user_profile.yaml` (шаблон — `config/user_profile.example.yaml`)
 - База данных: `data/state.db` (SQLite)
-- Vault: путь из `KB_VAULT_PATH` (по умолчанию `/home/anony/Documents/Личное/База знаний/`)
+- Vault: путь из `KB_VAULT_PATH` (по умолчанию `data/vault/`)
 - Системный промпт: `config/prompts/agent_prompt.md`
 
 ## Ограничения
-- Read-only инструменты MCP (`kb_search`, `kb_get_note`, `kb_get_insights`) работают сразу
-- Write-инструменты MCP создают pending-запрос: применяются только после `kb_confirm_change` / `kb-agent confirm <id>`
+- Read-only инструменты MCP (`kb_search`, `kb_get_note`, `kb_get_insights`, `kb_sources_status`, `kb_list_proposals`, `kb_get_proposal`) работают сразу
+- Write-инструменты MCP создают pending-запрос: применяются только после `kb-agent confirm <change_id>`
 - Изменение источников требует подтверждения человека
 - Не используйте веб-интерфейс, его нет

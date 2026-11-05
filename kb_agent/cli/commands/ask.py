@@ -12,14 +12,14 @@ from __future__ import annotations
 
 import typer
 
+from kb_agent.cli.output import output_json as _output_json
 from kb_agent.config import load_config
-from kb_agent.core.search import SearchEngine, SearchResult, format_search_response
 from kb_agent.core.insights import InsightsEngine
+from kb_agent.core.search import SearchEngine, SearchResult, format_search_response
 from kb_agent.core.update import KnowledgeUpdater
 from kb_agent.processing.llm_client import LLMClient
 from kb_agent.storage.state import StateManager
 from kb_agent.utils.logger import setup_logger
-from kb_agent.cli.output import output_json as _output_json
 
 logger = setup_logger("kb_agent.commands.ask")
 

@@ -8,8 +8,8 @@ from datetime import datetime, timedelta, timezone
 import yaml
 from typer.testing import CliRunner
 
-from kb_agent.cli.main import app
 import kb_agent.cli.commands.process as process_mod
+from kb_agent.cli.main import app
 
 
 def _run_doctor(config, monkeypatch, json_output=True):

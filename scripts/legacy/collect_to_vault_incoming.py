@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Сборщик постов из Telegram-каналов.
 Сохраняет новые посты в папку "Входящие" для последующей обработки агентом.
 """
 
 import re
+from pathlib import Path
+
 import requests
 from bs4 import BeautifulSoup
-from pathlib import Path
 
 # =============== ПУТИ ===============
 VAULT_ROOT = Path("/home/anony/Documents/Личное/База знаний/База знаний из ТГК")
@@ -43,8 +43,7 @@ def load_processed():
 def save_processed(processed):
     SCRIPT_DIR.mkdir(parents=True, exist_ok=True)
     with open(STATE_FILE, "w", encoding="utf-8") as f:
-        for key in sorted(processed):
-            f.write(key + "\n")
+        f.writelines(key + "\n" for key in sorted(processed))
 
 
 def clean_html(raw_html):

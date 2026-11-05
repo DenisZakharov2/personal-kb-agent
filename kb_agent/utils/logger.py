@@ -11,7 +11,6 @@ import logging
 import logging.handlers
 import re
 from pathlib import Path
-from typing import Optional
 
 _SECRET_PATTERNS = [
     (re.compile(r"(sk-[A-Za-z0-9]{20,})"), "sk-***"),
@@ -63,7 +62,7 @@ def _make_formatter() -> logging.Formatter:
 
 def setup_logger(
     name: str = "kb_agent",
-    log_path: Optional[Path] = None,
+    log_path: Path | None = None,
     level: int = logging.INFO,
 ) -> logging.Logger:
     """Создаёт/настраивает логгер с консолью и, по желанию, rotating файлом.
@@ -99,7 +98,7 @@ def setup_logger(
     return logger
 
 
-def configure_file_logging(log_path: Optional[Path] = None, level: int = logging.INFO) -> None:
+def configure_file_logging(log_path: Path | None = None, level: int = logging.INFO) -> None:
     """Подключает rotating файловый журнал ко всем существующим логгерам kb_agent.
 
     Вызывается после загрузки конфигурации (когда известен config.log_path).

@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import patch
 
-import pytest
 from typer.testing import CliRunner
 
 from kb_agent.cli.commands import process as process_cmd

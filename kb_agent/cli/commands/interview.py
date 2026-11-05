@@ -12,13 +12,13 @@ from pathlib import Path
 
 import typer
 
+from kb_agent.cli.output import output_json as _output_json
 from kb_agent.config import load_config
-from kb_agent.core.interview import InterviewManager
 from kb_agent.core.import_core import run_import_core
+from kb_agent.core.interview import InterviewManager
 from kb_agent.core.prompts import ensure_prompt_seeded
 from kb_agent.storage.state import StateManager
 from kb_agent.utils.logger import setup_logger
-from kb_agent.cli.output import output_json as _output_json
 
 app = typer.Typer(help="Интервью и импорт ядра материалов")
 

@@ -12,14 +12,11 @@ import difflib
 import json
 import os
 import sqlite3
-import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
 from kb_agent.config import PROJECT_ROOT, load_config
-from kb_agent.core.prompts import SUMMARIZE_PROMPT_NAME, ANSWER_PROMPT_NAME
 from kb_agent.core.search import SearchEngine
 from kb_agent.processing.llm_client import LLMClient
 from kb_agent.storage.state import StateManager
@@ -49,14 +46,14 @@ class ImprovementProposal:
     proposal_id: str
     target: str  # 'prompt' | 'config' | 'source'
     target_name: str
-    current_version: Optional[int]
-    proposed_version: Optional[int]
+    current_version: int | None
+    proposed_version: int | None
     diff: str
     reason: str
     status: str = "proposed"  # proposed | confirmed | applied | rejected | failed
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
-    confirmed_at: Optional[str] = None
-    applied_at: Optional[str] = None
+    confirmed_at: str | None = None
+    applied_at: str | None = None
     test_passed: bool = False
 
 
@@ -178,7 +175,7 @@ class SelfImprovementEngine:
         logger.info("Предложение изменений конфига %s сохранено: %s", config_key, reason)
         return proposal
 
-    def get_proposal(self, proposal_id: str) -> Optional[dict]:
+    def get_proposal(self, proposal_id: str) -> dict | None:
         """Возвращает предложение по ID или None."""
         return self.state.get_proposal(proposal_id)
 

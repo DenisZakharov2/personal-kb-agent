@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
 
 from kb_agent.config import AppConfig, load_config
 from kb_agent.sources.registry import SourceConfig, SourceRegistry
@@ -46,7 +45,7 @@ class SourceManager:
         registry_path = config.sources_path
         self.registry = SourceRegistry(sources_path=registry_path, state=state)
 
-    def collect_all(self, limit: Optional[int] = None) -> SourceCollectionResult:
+    def collect_all(self, limit: int | None = None) -> SourceCollectionResult:
         """Опрашивает все включённые источники."""
         limit = limit or self.config.limit
         self.registry.load()
@@ -83,7 +82,7 @@ class SourceManager:
 
         return result
 
-    def collect_one(self, source_id: str, limit: Optional[int] = None) -> dict:
+    def collect_one(self, source_id: str, limit: int | None = None) -> dict:
         """Опрашивает один источник по id."""
         limit = limit or self.config.limit
         self.registry.load()
@@ -115,7 +114,7 @@ class SourceManager:
         raise ValueError(f"Неподдерживаемый тип источника: {source.type}")
 
 
-def run_collection(config: Optional[AppConfig] = None, state: Optional[StateManager] = None) -> SourceCollectionResult:
+def run_collection(config: AppConfig | None = None, state: StateManager | None = None) -> SourceCollectionResult:
     """Удобная точка входа для сбора из всех источников."""
     if config is None:
         config = load_config()

@@ -5,8 +5,6 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from kb_agent.config import AppConfig
 from kb_agent.processing.llm_client import LLMClient, SummaryData
 

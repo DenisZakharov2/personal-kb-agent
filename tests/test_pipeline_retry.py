@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import patch
 
 from kb_agent.core.relevance import RelevanceGate
 from kb_agent.processing.llm_client import SummaryData
@@ -114,7 +112,7 @@ class TestPipelineExitCode:
         pipeline._write_vault_digest = lambda *a, **k: __import__("pathlib", fromlist=["Path"]).Path("/tmp/digest.md")
         monkeypatch.setattr(pipeline_mod, "ensure_prompt_seeded", lambda config, state: None)
         pipeline.state.init_db = lambda: None
-        pipeline._load_profile = lambda: {}
+        pipeline._load_profile = dict
 
         result = pipeline.run()
         pipeline.close()
@@ -141,7 +139,7 @@ class TestPipelineExitCode:
         pipeline._write_vault_digest = lambda *a, **k: __import__("pathlib", fromlist=["Path"]).Path("/tmp/digest.md")
         monkeypatch.setattr(pipeline_mod, "ensure_prompt_seeded", lambda config, state: None)
         pipeline.state.init_db = lambda: None
-        pipeline._load_profile = lambda: {}
+        pipeline._load_profile = dict
 
         result = pipeline.run()
         pipeline.close()
@@ -164,7 +162,7 @@ class TestPipelineExitCode:
         pipeline._write_vault_digest = lambda *a, **k: __import__("pathlib", fromlist=["Path"]).Path("/tmp/digest.md")
         monkeypatch.setattr(pipeline_mod, "ensure_prompt_seeded", lambda config, state: None)
         pipeline.state.init_db = lambda: None
-        pipeline._load_profile = lambda: {}
+        pipeline._load_profile = dict
 
         result = pipeline.run()
         pipeline.close()
@@ -190,7 +188,7 @@ class TestPipelineExitCode:
         pipeline._write_vault_digest = lambda *a, **k: __import__("pathlib", fromlist=["Path"]).Path("/tmp/digest.md")
         monkeypatch.setattr(pipeline_mod, "ensure_prompt_seeded", lambda config, state: None)
         pipeline.state.init_db = lambda: None
-        pipeline._load_profile = lambda: {}
+        pipeline._load_profile = dict
 
         result = pipeline.run()
         pipeline.close()
@@ -220,7 +218,7 @@ class TestPipelineExitCode:
         pipeline._write_vault_digest = lambda *a, **k: __import__("pathlib", fromlist=["Path"]).Path("/tmp/digest.md")
         monkeypatch.setattr(pipeline_mod, "ensure_prompt_seeded", lambda config, state: None)
         pipeline.state.init_db = lambda: None
-        pipeline._load_profile = lambda: {}
+        pipeline._load_profile = dict
 
         result = pipeline.run()
         pipeline.close()
@@ -239,6 +237,7 @@ class TestPipelineExitCode:
     def test_process_run_exits_nonzero_on_errors(self, config, monkeypatch):
         """CLI process run завершается с кодом 1 при ошибках сбора/обработки."""
         from typer.testing import CliRunner
+
         from kb_agent.cli.commands import process as process_cmd
 
         class FakePipeline:

@@ -9,15 +9,14 @@ from __future__ import annotations
 import asyncio
 
 import pytest
+from mcp.types import CallToolResult, TextContent
 
 from kb_agent.agents.mcp_server import (
     ALLOWED_HOSTS,
     _is_url_allowed,
     handle_call_tool,
-    handle_list_tools,
 )
 from kb_agent.sources.registry import normalize_source
-from mcp.types import CallToolResult, TextContent
 
 
 def _is_error_result(result) -> bool:

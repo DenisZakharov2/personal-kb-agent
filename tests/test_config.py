@@ -42,7 +42,7 @@ class TestConfigPaths:
 
     def test_default_vault_path_is_under_data_dir_not_personal(self):
         """По умолчанию vault_path = data_dir/vault, нет личного абсолютного пути."""
-        from kb_agent.config import AppConfig, DEFAULT_DATA_DIR
+        from kb_agent.config import DEFAULT_DATA_DIR, AppConfig
 
         config = AppConfig()
         assert config.vault_path == DEFAULT_DATA_DIR / "vault"

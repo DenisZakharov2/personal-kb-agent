@@ -2,15 +2,10 @@
 
 from __future__ import annotations
 
-import sqlite3
-
-import pytest
-
+from kb_agent.sources.base import SourceConfig
 from kb_agent.sources.manager import SourceManager
 from kb_agent.sources.registry import SourceRegistry
-from kb_agent.sources.base import SourceConfig
 from kb_agent.storage.pending import PendingManager
-from kb_agent.storage.state import StateManager
 
 
 class TestSourceRegistrySqlite:

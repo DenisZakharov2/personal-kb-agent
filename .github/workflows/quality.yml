@@ -31,10 +31,13 @@ jobs:
           pip install pip-audit
 
       - name: Lint (ruff check)
-        run: ruff check kb_agent scripts
+        run: ruff check kb_agent scripts tests
 
       - name: Format (ruff format --check)
-        run: ruff format --check kb_agent scripts
+        run: ruff format --check kb_agent scripts tests
+
+      - name: Type check (mypy)
+        run: mypy kb_agent scripts tests
 
       - name: Tests (pytest)
         run: pytest tests/ -q

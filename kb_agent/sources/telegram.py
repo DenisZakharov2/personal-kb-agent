@@ -8,9 +8,8 @@ from __future__ import annotations
 
 import hashlib
 import re
-from typing import Optional
 
-import requests
+import httpx
 from bs4 import BeautifulSoup
 
 from kb_agent.storage.state import StateManager
@@ -36,7 +35,7 @@ def _extract_message_id(link: str) -> str:
     return m.group(1) if m else ""
 
 
-def _clean_html(raw_html: Optional[str]) -> str:
+def _clean_html(raw_html: str | None) -> str:
     if not raw_html:
         return ""
     return BeautifulSoup(raw_html, "html.parser").get_text(" ", strip=True)
@@ -51,9 +50,10 @@ def fetch_channel_posts(channel: str, limit: int) -> list[dict]:
     """Скачивает посты из публичного канала t.me/s/<channel>."""
     url = f"https://t.me/s/{channel}"
     try:
-        r = requests.get(url, headers=HEADERS, timeout=20)
-        if r.status_code != 200:
-            raise RuntimeError(f"Не удалось открыть {channel} (статус {r.status_code})")
+        with httpx.Client(timeout=20) as client:
+            r = client.get(url, headers=HEADERS)
+            if r.status_code != 200:
+                raise RuntimeError(f"Не удалось открыть {channel} (статус {r.status_code})")
     except Exception as e:
         raise RuntimeError(f"Ошибка при запросе {channel}: {e}")
 
@@ -127,7 +127,7 @@ def _collect_one_channel(
     state: StateManager,
     channel: str,
     limit: int,
-    source_id: Optional[str] = None,
+    source_id: str | None = None,
 ) -> dict:
     """Внутренняя функция сбора одного канала."""
     channel_name = _extract_channel_name(channel)

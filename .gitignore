@@ -42,3 +42,4 @@ dist/
 
 # Резервные копии (артефакты backup)
 data/kb_backup_*.zip
+data/

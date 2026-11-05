@@ -7,11 +7,11 @@ from __future__ import annotations
 
 import typer
 
+from kb_agent.cli.output import output_json as _output_json
 from kb_agent.config import load_config
 from kb_agent.storage.pending import PendingManager
 from kb_agent.storage.state import StateManager
 from kb_agent.utils.logger import setup_logger
-from kb_agent.cli.output import output_json as _output_json
 
 logger = setup_logger("kb_agent.cli.confirm")
 
@@ -65,7 +65,7 @@ def confirm_command(
                 typer.echo(f"✓ Pending-запрос {change_id} подтверждён и применён.")
                 typer.echo(f"  Действие: {change['action']}")
                 typer.echo(f"  Сущность: {change['entity_type']} / {change['entity_id']}")
-                typer.echo(f"  Статус: applied")
+                typer.echo("  Статус: applied")
         else:
             if change["status"] != "pending":
                 result = {

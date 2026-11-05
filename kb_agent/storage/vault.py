@@ -12,7 +12,6 @@ import hashlib
 import os
 import uuid
 from pathlib import Path
-from typing import Optional
 
 import yaml
 
@@ -56,7 +55,7 @@ class VaultManager:
         folder.mkdir(parents=True, exist_ok=True)
         return folder
 
-    def find_note_file(self, note_id: str) -> Optional[Path]:
+    def find_note_file(self, note_id: str) -> Path | None:
         """Находит файл заметки по note_id из frontmatter.
 
         Сначала ищет точное совпадение note_id, чтобы при обновлении
@@ -80,13 +79,13 @@ class VaultManager:
         source_type: str,
         external_id: str,
         canonical_url: str,
-        published_at: Optional[str],
+        published_at: str | None,
         received_at: str,
         title: str,
         tags: str,
         topic: str,
         content: str,
-        previous_note_id: Optional[str] = None,
+        previous_note_id: str | None = None,
         archived: bool = False,
     ) -> Path:
         """Создаёт или обновляет .md файл с YAML frontmatter.
@@ -154,7 +153,7 @@ class VaultManager:
         logger.info("Запись заметки: %s", file_path)
         return file_path
 
-    def archive_note(self, note_id: str) -> Optional[Path]:
+    def archive_note(self, note_id: str) -> Path | None:
         """Перемещает файл заметки в папку ``Архив`` и возвращает новый путь.
 
         Если файл не найден — возвращает None. Повторный вызов для уже
@@ -223,7 +222,7 @@ class VaultManager:
         frontmatter_text, _, body = rest.partition("---\n")
         try:
             loaded = yaml.safe_load(frontmatter_text) or {}
-        except yaml.YAMLError:  # noqa: BLE001
+        except yaml.YAMLError:
             return
         if not isinstance(loaded, dict):
             return
@@ -239,7 +238,7 @@ class VaultManager:
         )
         atomic_write_text(path, "---\n" + new_fm + "\n---\n" + body, backup=False)
 
-    def restore_note(self, note_id: str, topic: Optional[str] = None) -> Optional[Path]:
+    def restore_note(self, note_id: str, topic: str | None = None) -> Path | None:
         """Возвращает файл заметки из архива в тематическую папку.
 
         ``topic`` — целевая тема (по умолчанию берётся из frontmatter).
@@ -273,7 +272,7 @@ class VaultManager:
         frontmatter_text, _, body = rest.partition("---\n")
         try:
             loaded = yaml.safe_load(frontmatter_text) or {}
-        except yaml.YAMLError:  # noqa: BLE001
+        except yaml.YAMLError:
             return
         if not isinstance(loaded, dict):
             return
@@ -281,7 +280,7 @@ class VaultManager:
         new_fm = yaml.safe_dump(loaded, allow_unicode=True, sort_keys=False, default_flow_style=False).strip()
         atomic_write_text(path, "---\n" + new_fm + "\n---\n" + body, backup=False)
 
-    def list_notes(self, topic: Optional[str] = None) -> list[Path]:
+    def list_notes(self, topic: str | None = None) -> list[Path]:
         """Возвращает список всех .md заметок, опционально по теме."""
         if topic:
             folder = self._topic_folder(topic)
@@ -344,13 +343,13 @@ class VaultManager:
                 loaded = yaml.safe_load(frontmatter_text)
                 if isinstance(loaded, dict):
                     data = loaded
-            except yaml.YAMLError:  # noqa: BLE001
+            except yaml.YAMLError:
                 # Пробуем починить значения, начинающиеся с @, и повторить парсинг.
                 try:
                     loaded = yaml.safe_load(self._sanitize_frontmatter(frontmatter_text))
                     if isinstance(loaded, dict):
                         data = loaded
-                except yaml.YAMLError as exc:  # noqa: BLE001
+                except yaml.YAMLError as exc:
                     logger.warning("Не удалось разобрать frontmatter %s: %s", path, exc)
 
         tags = data.get("tags", [])

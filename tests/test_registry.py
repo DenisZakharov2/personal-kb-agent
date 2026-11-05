@@ -2,14 +2,11 @@
 
 from __future__ import annotations
 
-import os
-import re
-
 import pytest
 import yaml
 
-from kb_agent.sources.registry import SourceRegistry, normalize_source
 from kb_agent.sources.base import SourceConfig
+from kb_agent.sources.registry import SourceRegistry, normalize_source
 
 
 def _write_yaml(path, sources):

@@ -12,10 +12,8 @@ from __future__ import annotations
 import hashlib
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
 import typer
-import yaml
 
 from kb_agent.cli.output import output_json as _output_json
 from kb_agent.config import load_config
@@ -152,7 +150,7 @@ def import_path(
                 report["imported"] += 1
                 report["details"].append(f"Импортировано: {f} → {file_path}")
 
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             report["errors"] += 1
             report["details"].append(f"Ошибка при импорте {f}: {exc}")
             logger.exception("Ошибка импорта %s", f)

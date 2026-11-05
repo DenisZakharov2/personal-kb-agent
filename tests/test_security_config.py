@@ -8,8 +8,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from kb_agent.core.self_improvement import (
     ALLOWED_CONFIG_PATHS,
     ImprovementProposal,

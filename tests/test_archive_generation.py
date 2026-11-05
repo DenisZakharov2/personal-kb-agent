@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from kb_agent.processing.pipeline import Pipeline
 from kb_agent.processing.llm_client import SummaryData
+from kb_agent.processing.pipeline import Pipeline
 from kb_agent.storage.state import StateManager
 
 

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 YouTube -> KB collector (двухэтапный сбор с транскрипциями).
 

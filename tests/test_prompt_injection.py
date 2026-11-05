@@ -8,8 +8,6 @@ from __future__ import annotations
 
 import asyncio
 
-import pytest
-
 from kb_agent.agents.mcp_server import handle_call_tool, handle_list_tools
 
 

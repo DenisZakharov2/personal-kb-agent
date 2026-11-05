@@ -6,13 +6,11 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 import yaml
 
 from kb_agent.storage.vault import VaultManager, atomic_write_text
 from kb_agent.utils.logger import setup_logger
-from kb_agent.utils.slug import slugify
 
 logger = setup_logger("kb_agent.storage.catalog")
 
@@ -59,7 +57,7 @@ class CatalogGenerator:
         return "\n".join(fixed_lines)
 
     @staticmethod
-    def _parse_frontmatter(content: str, note_path: Optional[Path] = None) -> dict:
+    def _parse_frontmatter(content: str, note_path: Path | None = None) -> dict:
         if not content.startswith("---\n"):
             return {}
         end = content.find("\n---\n", 4)
@@ -81,7 +79,7 @@ class CatalogGenerator:
                 )
                 return {}
 
-    def generate(self, output_path: Optional[Path] = None) -> Path:
+    def generate(self, output_path: Path | None = None) -> Path:
         """Генерирует Каталог.md и возвращает путь к нему."""
         vault_path = self.vault.vault_path
         if output_path is None:

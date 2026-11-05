@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
 from kb_agent.storage.state import StateManager
 
@@ -17,7 +16,7 @@ class FeedbackMetrics:
     """Агрегированные метрики обратной связи."""
 
     total_ratings: int
-    average_score: Optional[float]
+    average_score: float | None
     score_distribution: dict[int, int]
     total_messages: int
     recent_feedback: list[dict]

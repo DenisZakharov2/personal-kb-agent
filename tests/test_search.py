@@ -4,10 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from kb_agent.config import AppConfig
 from kb_agent.core.search import SearchEngine
 from kb_agent.processing.llm_client import LLMClient
-from kb_agent.storage.state import StateManager
 
 
 def _index_note(state, note_id, title, topic, content):

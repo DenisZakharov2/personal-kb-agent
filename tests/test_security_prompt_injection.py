@@ -9,11 +9,10 @@ from __future__ import annotations
 
 import asyncio
 
-import pytest
+from mcp.types import CallToolResult, TextContent
 
 from kb_agent.agents.mcp_server import handle_call_tool, handle_list_tools
 from kb_agent.storage.pending import PendingManager
-from mcp.types import CallToolResult, TextContent
 
 
 def _is_error_result(result) -> bool:

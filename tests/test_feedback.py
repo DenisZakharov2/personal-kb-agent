@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typer.testing import CliRunner
 
-from kb_agent.cli.main import app
 import kb_agent.cli.commands.feedback as feedback_mod
+from kb_agent.cli.main import app
 
 
 def _invoke(config, monkeypatch, args, json_output=True):

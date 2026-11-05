@@ -12,7 +12,6 @@ import sqlite3
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
 import yaml
 
@@ -23,9 +22,9 @@ from kb_agent.core.prompts import (
     get_active_system_prompt,
 )
 from kb_agent.core.relevance import RelevanceGate
-from kb_agent.sources.registry import SourceRegistry, ensure_sources_file
 from kb_agent.processing.llm_client import LLMClient
 from kb_agent.sources.manager import run_collection
+from kb_agent.sources.registry import SourceRegistry, ensure_sources_file
 from kb_agent.storage.catalog import CatalogGenerator
 from kb_agent.storage.state import StateManager
 from kb_agent.storage.vault import VaultManager, atomic_write_text
@@ -43,7 +42,7 @@ class Pipeline:
         self.llm = LLMClient(config)
         self.vault = VaultManager(config)
         self.catalog = CatalogGenerator(self.vault)
-        self.relevance: Optional[RelevanceGate] = None
+        self.relevance: RelevanceGate | None = None
 
     def _load_profile(self) -> dict:
         """Загружает user_profile.yaml или возвращает пустой профиль."""
@@ -352,7 +351,7 @@ class Pipeline:
                 else:
                     created += 1
 
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 logger.exception("Ошибка при обработке элемента %s", queue_id)
                 self.state.mark_failed(queue_id, str(exc))
                 failed += 1

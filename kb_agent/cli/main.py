@@ -21,28 +21,30 @@ from __future__ import annotations
 import typer
 
 from kb_agent import __version__
+from kb_agent.agents.mcp_server import main as mcp_main
+from kb_agent.cli.commands.ask import (
+    ask_command,
+    insights_command,
+    search_command,
+    update_app,
+)
+from kb_agent.cli.commands.confirm import confirm_command
+from kb_agent.cli.commands.feedback import app as feedback_app
 from kb_agent.cli.commands.interview import app as interview_app
+from kb_agent.cli.commands.merge import merge_command
+from kb_agent.cli.commands.pending import pending_command
 from kb_agent.cli.commands.process import (
     app as process_app,
+)
+from kb_agent.cli.commands.process import (
     process_backup,
     process_doctor,
     process_reindex,
     process_retry,
     process_skipped,
 )
-from kb_agent.cli.commands.confirm import confirm_command
-from kb_agent.cli.commands.pending import pending_command
-from kb_agent.cli.commands.feedback import app as feedback_app
 from kb_agent.cli.commands.self_improve import app as self_improve_app
 from kb_agent.cli.commands.sources import app as sources_app
-from kb_agent.cli.commands.ask import (
-    ask_command,
-    search_command,
-    insights_command,
-    update_app,
-)
-from kb_agent.cli.commands.merge import merge_command
-from kb_agent.agents.mcp_server import main as mcp_main
 
 app = typer.Typer(
     help="AI-агент для базы знаний ТГК",
@@ -67,7 +69,6 @@ def main(
     ),
 ) -> None:
     """Корневая команда CLI."""
-    pass
 
 
 # Подключаем группы команд

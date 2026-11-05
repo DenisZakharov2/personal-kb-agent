@@ -64,12 +64,12 @@ Describe what you changed and why. Screenshots or CLI output are welcome.
 
 ```
 personal-kb-agent/
-├── README.md              # this file
+├── README.md              # Project documentation
 ├── LICENSE                # MIT license
-├── pyproject.toml         # project metadata and dependencies
-├── .env.example           # environment variables template
-├── .gitignore             # files excluded from git
-├── kb_agent/              # main package
+├── pyproject.toml         # Project metadata and dependencies
+├── .env.example           # Environment variables template
+├── .gitignore             # Files excluded from git
+├── kb_agent/              # Main package
 │   ├── cli/               # CLI commands (Typer)
 │   │   ├── commands/
 │   │   │   ├── ask.py           # ask, search, insights, update check
@@ -79,49 +79,51 @@ personal-kb-agent/
 │   │   │   ├── process.py       # process run/digest/status
 │   │   │   ├── self_improve.py  # self-improve rollback
 │   │   │   └── sources.py       # sources add/remove/enable/disable/list
-│   │   ├── output.py            # shared JSON output helper
+│   │   ├── output.py            # Shared JSON output helper
 │   │   └── main.py              # CLI entry point
-│   ├── core/                # core logic
+│   ├── core/                # Core logic
 │   │   ├── interview.py         # InterviewManager
 │   │   ├── insights.py          # InsightsEngine (themes, gaps, links)
-│   │   ├── prompts.py           # versioned system prompts (prompt_history)
+│   │   ├── prompts.py           # Versioned system prompts (prompt_history)
 │   │   ├── relevance.py         # Relevance Gate
 │   │   ├── search.py            # FTS5 search + LLM answer
 │   │   ├── self_improvement.py  # SelfImprovementEngine
 │   │   └── update.py            # KnowledgeUpdater
-│   ├── processing/            # processing pipeline
+│   ├── processing/            # Processing pipeline
 │   │   ├── llm_client.py        # LLM client (OpenAI-compatible, retries)
 │   │   └── pipeline.py          # Pipeline (collect → relevance → LLM → vault)
-│   ├── sources/               # data sources
+│   ├── sources/               # Data sources
 │   │   ├── base.py              # BaseSource abstract class
 │   │   ├── registry.py          # SourceRegistry (sources.yaml)
 │   │   ├── manager.py           # SourceManager (collect all/one)
 │   │   ├── telegram.py          # Telegram collector
 │   │   └── youtube.py           # YouTube collector
-│   ├── storage/               # storage layer
+│   ├── storage/               # Storage layer
 │   │   ├── state.py             # StateManager (SQLite)
 │   │   ├── vault.py             # VaultManager (Obsidian vault)
 │   │   ├── catalog.py           # CatalogGenerator (Каталог.md)
 │   │   └── pending.py           # PendingManager (pending changes)
-│   ├── agents/                # external agent integration
+│   ├── agents/                # External agent integration
 │   │   └── mcp_server.py        # MCP server (kb-agent mcp-serve)
-│   ├── feedback/              # feedback collection
+│   ├── feedback/              # Feedback collection
 │   │   ├── collector.py         # FeedbackCollector
 │   │   └── metrics.py           # FeedbackMetricsCollector
-│   ├── config.py              # application configuration
+│   ├── config.py              # Application configuration
 │   ├── utils/
-│   │   └── logger.py            # logging setup
+│   │   └── logger.py            # Logging setup
 │   └── __init__.py
-├── config/                    # configuration templates
-│   ├── sources.example.yaml   # sources template
-│   ├── user_profile.example.yaml  # profile template
+├── config/                    # Configuration templates
+│   ├── sources.example.yaml   # Sources template
+│   ├── user_profile.example.yaml  # Profile template
 │   └── prompts/
-│       └── agent_prompt.md    # system prompt
-├── scripts/                   # служебные скрипты
-│   ├── prepare_stage4_write.sh # проверка окружения (Этап 4)
-│   └── legacy/                 # сборщики первого поколения (_queue.jsonl), не используются приложением
-├── tests/                     # tests (to be added)
-├── docs/                      # documentation
+│       ├── agent_prompt.md    # System prompt (search/answer)
+│       ├── answer_prompt.md   # Answer prompt (search/answer)
+│       └── summarize_prompt.md  # Summarize prompt (pipeline)
+├── scripts/                   # Utility scripts
+│   ├── prepare_stage4_write.sh # Environment check (Stage 4)
+│   └── legacy/                # Legacy collectors (_queue.jsonl), not used by app
+├── tests/                     # Tests (38 test files, 297 tests)
+├── docs/                      # Documentation
 └── SKILL.md                   # MCP skill for AI agents
 ```
 
