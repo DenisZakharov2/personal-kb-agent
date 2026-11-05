@@ -432,7 +432,11 @@ class Pipeline:
 
     def _link_related_notes(self, note_id: str, tags: list[str]) -> None:
         """Создаёт связи `references` с заметками по общим тегам (топ-3)."""
-        my_tags = {tag.strip().lower() for tag in tags if tag.strip()}
+        my_tags = {
+            tag.strip().lower()
+            for tag in tags
+            if isinstance(tag, str) and tag.strip()
+        }
         if not my_tags:
             return
         conn = self.state.connect()
