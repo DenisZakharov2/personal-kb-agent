@@ -149,3 +149,91 @@ class TestStateSearchProvenance:
         assert row["file_path"] is None
         assert row["content_hash"] is None
         assert row["revision"] is None
+
+
+class TestStatePromptSeeding:
+    """P1-09: Промпты сеяятся из упакованных ресурсов."""
+
+    def test_seed_prompt_from_text_creates_version_1(self, config, state):
+        """seed_prompt_from_text создаёт версию 1 промпта из строки."""
+        result = state.seed_prompt_from_text(
+            prompt_name="test_prompt",
+            content="Это тестовый промпт для проверки.",
+            prompt_type="summarize",
+        )
+        assert result is not None
+        assert result["prompt_name"] == "test_prompt"
+        assert result["version"] == 1
+        assert result["prompt_type"] == "summarize"
+        assert result["is_active"] == 1
+        assert result["approved_by"] == "system"
+        assert result["content"] == "Это тестовый промпт для проверки."
+
+    def test_seed_prompt_from_text_idempotent(self, config, state):
+        """Повторный вызов для того же промпта не создаёт дубля."""
+        result1 = state.seed_prompt_from_text(
+            prompt_name="test_prompt_idem",
+            content="Первая версия.",
+            prompt_type="search",
+        )
+        assert result1 is not None
+        assert result1["version"] == 1
+
+        result2 = state.seed_prompt_from_text(
+            prompt_name="test_prompt_idem",
+            content="Вторая версия (игнорируется).",
+            prompt_type="search",
+        )
+        assert result2 is None  # активная версия уже есть
+
+    def test_seed_prompt_from_text_empty_content(self, config, state):
+        """Пустое содержимое — не создаёт промпт."""
+        result = state.seed_prompt_from_text(
+            prompt_name="test_prompt_empty",
+            content="",
+            prompt_type="search",
+        )
+        assert result is None
+
+    def test_seed_prompt_from_text_whitespace_only(self, config, state):
+        """Только пробелы — не создаёт промпт."""
+        result = state.seed_prompt_from_text(
+            prompt_name="test_prompt_ws",
+            content="   \n\n   ",
+            prompt_type="search",
+        )
+        assert result is None
+
+
+class TestPromptSeedingFromResources:
+    """P1-09: ensure_prompt_seeded читает промпты из упакованных ресурсов."""
+
+    def test_ensure_prompt_seeded_uses_packaged_resources(self, config, state, monkeypatch):
+        """ensure_prompt_seeded читает содержимое промпта из ресурсов, а не от пути к файлу."""
+        import kb_agent.core.prompts as prompts_mod
+
+        # Мокаем get_prompt_text в модуле config (откуда импортируется в prompts)
+        monkeypatch.setattr(
+            "kb_agent.config.get_prompt_text",
+            lambda name: "# Тестовый промпт из ресурсов\nСодержимое для проверки.",
+        )
+        # Мокаем save_prompt, чтобы отслеживать вызовы
+        calls = []
+        original_save = state.save_prompt
+
+        def tracking_save(*args, **kwargs):
+            calls.append((args, kwargs))
+            return original_save(*args, **kwargs)
+
+        monkeypatch.setattr(state, "save_prompt", tracking_save)
+
+        result = prompts_mod.ensure_prompt_seeded(config, state)
+
+        # Должны быть вызваны save_prompt для всех трёх промптов
+        assert len(calls) == 3, f"Ожидалось 3 вызова save_prompt, получено {len(calls)}"
+        prompt_names = {call[1].get("prompt_name") or call[0][0] for call in calls}
+        assert prompt_names == {"agent_prompt", "summarize_prompt", "answer_prompt"}
+        # Все промпты получат одинаковое содержимое из agent_prompt.md
+        for call in calls:
+            content = call[1].get("content") or call[0][2]
+            assert content == "# Тестовый промпт из ресурсов\nСодержимое для проверки."

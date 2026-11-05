@@ -1281,6 +1281,37 @@ class StateManager:
         logger.info("Промпт %s импортирован в prompt_history как версия 1", prompt_name)
         return self.get_active_prompt(prompt_name, prompt_type=prompt_type)
 
+    def seed_prompt_from_text(
+        self,
+        prompt_name: str,
+        content: str,
+        prompt_type: str = "search",
+    ) -> Optional[dict]:
+        """Заводит версию 1 промпта из строки, если активной версии ещё нет.
+
+        Аналог ``seed_prompt_from_file``, но принимает содержимое промпта
+        напрямую (для чтения из упакованных ресурсов через importlib.resources).
+        """
+        if self.get_active_prompt(prompt_name, prompt_type=prompt_type):
+            return None
+        content = (content or "").strip()
+        if not content:
+            return None
+        self.save_prompt(
+            prompt_name=prompt_name,
+            version=1,
+            content=content,
+            prompt_type=prompt_type,
+            is_active=True,
+            approved_by="system",
+        )
+        logger.info(
+            "Промпт %s (тип %s) импортирован в prompt_history как версия 1 из текста",
+            prompt_name,
+            prompt_type,
+        )
+        return self.get_active_prompt(prompt_name, prompt_type=prompt_type)
+
     def is_processed(self, key: str) -> bool:
         conn = self.connect()
         row = conn.execute("SELECT 1 FROM processed WHERE key = ?", (key,)).fetchone()

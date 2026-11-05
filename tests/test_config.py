@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from kb_agent.config import get_prompt_path
+from kb_agent.config import get_prompt_path, get_prompt_text
 
 
 class TestConfigResources:
@@ -23,6 +23,18 @@ class TestConfigResources:
         assert path is not None
         content = path.read_text(encoding="utf-8")
         assert len(content) > 0, "Промпт не пустой"
+
+    def test_get_prompt_text_reads_packaged_prompt(self):
+        """get_prompt_text читает содержимое упакованного промпта."""
+        text = get_prompt_text("agent_prompt.md")
+        assert text is not None, "agent_prompt.md должен быть прочитан"
+        assert len(text) > 0, "Промпт не пустой"
+        assert "# " in text or "## " in text, "Промпт содержит markdown-заголовки"
+
+    def test_get_prompt_text_none_for_missing(self):
+        """get_prompt_text возвращает None для несуществующего ресурса."""
+        text = get_prompt_text("nonexistent_prompt.md")
+        assert text is None
 
 
 class TestConfigPaths:

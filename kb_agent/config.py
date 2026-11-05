@@ -75,6 +75,20 @@ def _resource_path(package: str, resource_name: str) -> Optional[Path]:
         return None
 
 
+def read_resource_text(package: str, resource_name: str) -> Optional[str]:
+    """Читает содержимое упакованного ресурса в виде строки.
+
+    Работает как с файлами на диске (режим разработки), так и с ресурсами
+    внутри установленного wheel (importlib.resources).
+    """
+    try:
+        return importlib_resources.files(package).joinpath(resource_name).read_text(
+            encoding="utf-8"
+        )
+    except (FileNotFoundError, ModuleNotFoundError, ImportError, TypeError, OSError):
+        return None
+
+
 class AppConfig(BaseModel):
     """Основная конфигурация приложения."""
 
@@ -256,4 +270,24 @@ def get_prompt_path(prompt_name: str) -> Optional[Path]:
     fallback = PROJECT_ROOT / "config" / "prompts" / prompt_name
     if fallback.exists():
         return fallback
+    return None
+
+
+def get_prompt_text(prompt_name: str) -> Optional[str]:
+    """Читает содержимое промпта из упакованных ресурсов.
+
+    Сначала пробует importlib.resources (работает в установленном wheel),
+    затем fallback на чтение файла (режим разработки).
+    """
+    # Сначала пробуем упакованный ресурс
+    text = read_resource_text(RESOURCES_PACKAGE, f"prompts/{prompt_name}")
+    if text is not None:
+        return text
+    # Fallback для разработки из исходников
+    path = get_prompt_path(prompt_name)
+    if path is not None:
+        try:
+            return path.read_text(encoding="utf-8")
+        except OSError:
+            return None
     return None

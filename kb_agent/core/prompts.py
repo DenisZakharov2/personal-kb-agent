@@ -52,15 +52,18 @@ def ensure_prompt_seeded(config: AppConfig, state: StateManager) -> Optional[dic
     чтобы активную версию можно было выбирать по задаче.
     Возвращает последнюю созданную запись или None, если активные версии уже есть.
     """
-    # Базовое содержимое берём из упакованного ресурса, с fallback на каталог
-    # config/prompts при разработке из исходников.
-    from kb_agent.config import get_prompt_path
+    # Базовое содержимое берём из упакованных ресурсов через importlib.resources
+    # (работает в установленном wheel), с fallback на файл config/prompts
+    # при разработке из исходников.
+    from kb_agent.config import get_prompt_text
 
-    base_path = get_prompt_path(config, "agent_prompt.md") or agent_prompt_path(config)
+    base_text = get_prompt_text("agent_prompt.md")
     seeded: Optional[dict] = None
     for prompt_name in _ALL_PROMPT_NAMES:
-        result = state.seed_prompt_from_file(
-            prompt_name, base_path, prompt_type=PROMPT_TYPES.get(prompt_name, "search")
+        result = state.seed_prompt_from_text(
+            prompt_name,
+            base_text or "",
+            prompt_type=PROMPT_TYPES.get(prompt_name, "search"),
         )
         if result:
             seeded = result
