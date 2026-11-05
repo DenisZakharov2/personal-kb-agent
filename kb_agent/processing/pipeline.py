@@ -162,9 +162,18 @@ class Pipeline:
                     revision = int(existing["revision"] or 1) + 1
                     is_update = True
                 else:
-                    note_id = self._make_note_id(item["received_at"])
-                    revision = 1
-                    is_update = False
+                    # Проверяем, есть ли уже сохранённый note_id в очереди
+                    # (идемпотентность при повторе после частичного сбоя).
+                    queue_item = self.state.get_queue_item(queue_id)
+                    stored_note_id = queue_item.get("note_id") if queue_item else None
+                    if stored_note_id:
+                        note_id = stored_note_id
+                        revision = 1
+                        is_update = False
+                    else:
+                        note_id = self._make_note_id(item["received_at"])
+                        revision = 1
+                        is_update = False
 
                 # Структурированная суммаризация через LLM (P2-10: JSON-схема,
                 # валидация темы против профиля, повтор при невалидной схеме)
@@ -199,6 +208,10 @@ class Pipeline:
                     topic=topic,
                     content=content,
                 )
+
+                # Сохраняем note_id в очереди для идемпотентного повтора
+                # после частичного сбоя (файл записан, но индекс ещё нет).
+                self.state.set_queue_item_note_id(queue_id, note_id)
 
                 # Метаданные генерации (модель, версия промпта, токены, задержка, стоимость).
                 llm_response = self.llm.last_response

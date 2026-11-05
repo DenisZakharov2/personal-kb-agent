@@ -349,6 +349,12 @@ _SCHEMA = [
         );
         """,
     ),
+    (
+        23,
+        """
+        ALTER TABLE raw_queue ADD COLUMN note_id TEXT;
+        """,
+    ),
 ]
 
 SCHEMA_VERSION = max(v for v, _ in _SCHEMA)
@@ -435,6 +441,57 @@ class StateManager:
             # Запись уже существует (по external_id или raw_hash)
             conn.rollback()
             return None
+
+    def get_queue_item(self, queue_id: int) -> Optional[dict]:
+        """Возвращает запись raw_queue по id."""
+        conn = self.connect()
+        row = conn.execute(
+            "SELECT * FROM raw_queue WHERE id = ?", (queue_id,)
+        ).fetchone()
+        return dict(row) if row else None
+
+    def get_queue_item_by_external(
+        self, source_id: str, external_id: str
+    ) -> Optional[dict]:
+        """Возвращает запись raw_queue по паре (source_id, external_id)."""
+        conn = self.connect()
+        row = conn.execute(
+            """
+            SELECT * FROM raw_queue
+            WHERE source_id = ? AND external_id = ?
+            ORDER BY id DESC LIMIT 1
+            """,
+            (source_id, external_id),
+        ).fetchone()
+        return dict(row) if row else None
+
+    def set_queue_item_note_id(self, queue_id: int, note_id: str) -> None:
+        """Сохраняет note_id в записи raw_queue (для идемпотентного повтора).
+
+        Вызывается сразу после успешной записи файла в vault, чтобы при
+        повторной обработке того же элемента использовать тот же note_id и не
+        создавать дубли файлов.
+        """
+        conn = self.connect()
+        conn.execute(
+            "UPDATE raw_queue SET note_id = ? WHERE id = ?",
+            (note_id, queue_id),
+        )
+        conn.commit()
+
+    def get_queue_items_without_note_id(self) -> list[dict]:
+        """Возвращает элементы raw_queue в состоянии processed/failed, у которых
+        не сохранён note_id (Possible orphans после частичного сбоя)."""
+        conn = self.connect()
+        rows = conn.execute(
+            """
+            SELECT * FROM raw_queue
+            WHERE state IN ('processed', 'failed')
+              AND note_id IS NULL
+            ORDER BY received_at DESC
+            """
+        ).fetchall()
+        return [dict(row) for row in rows]
 
     def get_next_new(self) -> Optional[dict]:
         conn = self.connect()

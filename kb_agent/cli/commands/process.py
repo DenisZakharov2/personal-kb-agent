@@ -500,6 +500,183 @@ def process_skipped(
         typer.echo("Вернуть элемент в новую обработку: kb-agent retry <id>")
 
 
+@app.command("reconcile")
+def process_reconcile(
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        "-j",
+        help="Вывести результат в формате JSON",
+    ),
+    fix: bool = typer.Option(
+        False,
+        "--fix/--no-fix",
+        help="Автоматически исправлять найденные проблемы (индексировать файлы-орфаны)",
+    ),
+) -> None:
+    """Сверка состояния: файлы vault, notes, notes_fts, raw_queue.
+
+    Находит:
+    - файлы в vault без записи в notes (орфаны после частичного сбоя)
+    - записи в notes без файла в vault
+    - элементы raw_queue в состоянии failed без next_retry_at (неповторимые)
+    - элементы raw_queue в состоянии processing с истёкшим lease
+    """
+    config = load_config()
+    state = StateManager(config.db_path)
+    vault = VaultManager(config)
+    try:
+        state.init_db()
+        conn = state.connect()
+
+        issues: list[dict] = []
+        fixed: list[dict] = []
+
+        # 1. Файлы в vault без записи в notes (орфаны после частичного сбоя)
+        vault_note_ids: dict[str, Path] = {}
+        for path in sorted(vault.list_notes()):
+            parsed = vault.parse_note(path)
+            note_id = (parsed.get("note_id") or "").strip()
+            if note_id:
+                vault_note_ids[note_id] = path
+
+        notes_note_ids = {
+            row["note_id"]
+            for row in conn.execute("SELECT note_id FROM notes").fetchall()
+        }
+
+        for note_id, path in sorted(vault_note_ids.items()):
+            if note_id not in notes_note_ids:
+                issue = {
+                    "kind": "orphan_vault_file",
+                    "note_id": note_id,
+                    "path": str(path),
+                    "detail": "файл в vault без записи в notes/notes_fts",
+                }
+                issues.append(issue)
+                if fix:
+                    # Проверяем, есть ли элемент в raw_queue с этим note_id
+                    queue_row = conn.execute(
+                        "SELECT * FROM raw_queue WHERE note_id = ? LIMIT 1",
+                        (note_id,),
+                    ).fetchone()
+                    if queue_row:
+                        queue_item = dict(queue_row)
+                        # Завершаем индексацию: файл уже есть, добавляем в notes + fts
+                        parsed = vault.parse_note(path)
+                        state.index_note(
+                            note_id=note_id,
+                            title=parsed["title"],
+                            tags=parsed["tags"],
+                            topic=parsed["topic"],
+                            content=parsed["content"],
+                            source_id=parsed.get("source_id"),
+                            external_id=parsed.get("external_id"),
+                            canonical_url=parsed.get("url"),
+                            file_path=str(path),
+                            content_hash=parsed.get("content_hash"),
+                            revision=1,
+                        )
+                        conn.execute(
+                            "UPDATE raw_queue SET state = 'processed' WHERE id = ?",
+                            (queue_item["id"],),
+                        )
+                        conn.commit()
+                        fixed.append({
+                            "kind": "orphan_indexed",
+                            "note_id": note_id,
+                            "queue_id": queue_item["id"],
+                            "detail": "файл проиндексирован, очередь помечена processed",
+                        })
+
+        # 2. Записи в notes без файла в vault
+        for note_id in sorted(notes_note_ids - set(vault_note_ids.keys())):
+            issues.append({
+                "kind": "missing_vault_file",
+                "note_id": note_id,
+                "detail": "запись в notes без файла в vault",
+            })
+
+        # 3. Элементы raw_queue в failed без next_retry_at (неповторимые)
+        stuck_failed = conn.execute(
+            """
+            SELECT id, source_id, external_id, title, last_error, attempts
+            FROM raw_queue
+            WHERE state = 'failed' AND next_retry_at IS NULL
+            ORDER BY received_at DESC
+            """
+        ).fetchall()
+        for row in stuck_failed:
+            issues.append({
+                "kind": "failed_no_retry",
+                "queue_id": row["id"],
+                "source_id": row["source_id"],
+                "external_id": row["external_id"],
+                "title": row["title"],
+                "detail": f"ошибка: {row['last_error']}, попыток: {row['attempts']}",
+            })
+
+        # 4. Элементы raw_queue в processing с истёкшим lease
+        now = datetime.now(timezone.utc).isoformat()
+        stuck_processing = conn.execute(
+            """
+            SELECT id, source_id, external_id, title, lease_expires_at, processing_started_at
+            FROM raw_queue
+            WHERE state = 'processing'
+              AND (lease_expires_at IS NULL OR lease_expires_at < ?)
+            ORDER BY received_at DESC
+            """,
+            (now,),
+        ).fetchall()
+        for row in stuck_processing:
+            issues.append({
+                "kind": "stuck_processing",
+                "queue_id": row["id"],
+                "source_id": row["source_id"],
+                "external_id": row["external_id"],
+                "title": row["title"],
+                "detail": f"lease_expires_at={row['lease_expires_at']}",
+            })
+
+        state.close()
+
+        result = {
+            "issues": issues,
+            "fixed": fixed,
+            "count": len(issues),
+            "fixed_count": len(fixed),
+            "kinds": {},
+        }
+        all_kinds = {
+            "orphan_vault_file", "missing_vault_file",
+            "failed_no_retry", "stuck_processing",
+            "orphan_indexed",
+        }
+        for kind in all_kinds:
+            result["kinds"][kind] = sum(1 for i in issues if i["kind"] == kind)
+            result["kinds"][f"{kind}_fixed"] = sum(1 for f in fixed if f["kind"] == kind)
+
+        if json_output:
+            _output_json(result)
+        else:
+            typer.echo(
+                f"reconcile: найдено проблем — {len(issues)}, исправлено — {len(fixed)}"
+            )
+            for kind, number in result["kinds"].items():
+                if number:
+                    typer.echo(f"  {kind}: {number}")
+            if not issues and not fixed:
+                typer.echo("Несоответствий не найдено.")
+    except Exception:  # noqa: BLE001
+        logger.exception("Ошибка reconcile")
+        state.close()
+        if json_output:
+            _output_json({"error": "ошибка reconcile", "issues": [], "fixed": []})
+        else:
+            typer.echo("✗ Ошибка reconcile")
+        raise typer.Exit(code=1)
+
+
 @app.command("backup")
 def process_backup(
     output: Optional[str] = typer.Option(
