@@ -13,11 +13,11 @@ YouTube -> KB collector (двухэтапный сбор с транскрипц
 с YAML frontmatter и секциями: Суть, Ключевые идеи, Инструменты и ресурсы, Практические выводы.
 
 Переменные окружения:
-    KB_YT_CHANNEL_URL  — URL канала (приоритет)
     KB_YOUTUBE_CHANNELS — список URL каналов через запятую (берётся первый)
-    KB_YT_MONTHS       — глубина бэклога в месяцах (по умолчанию 16)
-    KB_YT_SUB_LANGS    — языки субтитров через запятую (по умолчанию ru,en)
-    KB_YT_LIMIT        — макс. видео за запуск transcripts (0 = все)
+    KB_YT_CHANNEL_URL   — (устарело) URL одного канала, вместо KB_YOUTUBE_CHANNELS
+    KB_YT_MONTHS        — глубина бэклога в месяцах (по умолчанию 16)
+    KB_YT_SUB_LANGS     — языки субтитров через запятую (по умолчанию ru,en)
+    KB_YT_LIMIT         — макс. видео за запуск transcripts (0 = все)
 """
 
 from __future__ import annotations
@@ -38,13 +38,17 @@ DEFAULT_SUB_LANGS = "ru,en"
 
 
 def default_channel_url() -> str:
-    """URL канала: KB_YT_CHANNEL_URL → первый из KB_YOUTUBE_CHANNELS → значение по умолчанию."""
-    single = os.getenv("KB_YT_CHANNEL_URL", "").strip()
-    if single:
-        return single
+    """URL канала: KB_YOUTUBE_CHANNELS (первый) → KB_YT_CHANNEL_URL (устарело) → значение по умолчанию."""
     multiple = os.getenv("KB_YOUTUBE_CHANNELS", "").strip()
     if multiple:
         return multiple.split(",")[0].strip()
+    single = os.getenv("KB_YT_CHANNEL_URL", "").strip()
+    if single:
+        import logging
+        logging.getLogger("collect_youtube").warning(
+            "KB_YT_CHANNEL_URL устарел, используйте KB_YOUTUBE_CHANNELS"
+        )
+        return single
     return DEFAULT_CHANNEL_URL
 
 
