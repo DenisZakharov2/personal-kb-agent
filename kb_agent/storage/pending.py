@@ -17,6 +17,7 @@ import yaml
 
 from kb_agent.config import load_config
 from kb_agent.storage.state import StateManager
+from kb_agent.storage.vault import atomic_write_text
 from kb_agent.utils.logger import setup_logger
 
 logger = setup_logger("kb_agent.storage.pending")
@@ -406,9 +407,10 @@ class PendingManager:
         user.update(updates)
 
         profile_path.parent.mkdir(parents=True, exist_ok=True)
-        profile_path.write_text(
+        atomic_write_text(
+            profile_path,
             yaml.dump(data, allow_unicode=True, sort_keys=False),
-            encoding="utf-8",
+            backup=True,
         )
         logger.info("Профиль обновлён: %s", profile_path)
 

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import json
+import os
 
 import pytest
 
@@ -193,3 +195,60 @@ class TestPendingTTL:
         assert pm.get_change(change_id)["status"] == "expired"
         expired = pm.list_changes(status="expired")
         assert any(c["change_id"] == change_id for c in expired)
+
+
+class TestPendingUpdateProfile:
+    """P2-02: обновление профиля через pending записывает YAML атомарно."""
+
+    def test_update_profile_creates_profile_and_applied(self, config, state, monkeypatch):
+        """Подтверждение update_profile создаёт user_profile.yaml и меняет статус на applied."""
+        monkeypatch.setattr("kb_agent.storage.pending.load_config", lambda: config)
+        pm = PendingManager(state)
+        change_id = pm.create_change(
+            action="update_profile",
+            entity_type="profile",
+            entity_id="user",
+            parameters={"updates": {"goal": "Тестирование", "topics": ["ИИ", "Python"]}},
+        )
+
+        ok = pm.confirm_change(change_id, revision=0, confirmed_by="tester")
+        assert ok is True
+        assert pm.get_change(change_id)["status"] == "applied"
+
+        # Профиль создан на диске
+        assert config.profile_path.exists()
+        import yaml
+        data = yaml.safe_load(config.profile_path.read_text(encoding="utf-8"))
+        assert data["user"]["goal"] == "Тестирование"
+        assert data["user"]["topics"] == ["ИИ", "Python"]
+
+    def test_update_profile_atomic_creates_backup(self, config, state, monkeypatch):
+        """При обновлении существующего профиля создаётся .bak резервная копия."""
+        monkeypatch.setattr("kb_agent.storage.pending.load_config", lambda: config)
+        # Создаём начальный профиль
+        config.profile_path.parent.mkdir(parents=True, exist_ok=True)
+        config.profile_path.write_text(
+            "user:\n  goal: Старая цель\n  topics: []\n",
+            encoding="utf-8",
+        )
+
+        pm = PendingManager(state)
+        change_id = pm.create_change(
+            action="update_profile",
+            entity_type="profile",
+            entity_id="user",
+            parameters={"updates": {"goal": "Новая цель"}},
+        )
+
+        ok = pm.confirm_change(change_id, revision=0, confirmed_by="tester")
+        assert ok is True
+
+        # .bak файл должен существовать (атомарная запись с резервной копией)
+        bak_path = config.profile_path.with_name(config.profile_path.name + ".bak")
+        assert bak_path.exists(), f"Ожидался .bak файл: {bak_path}"
+
+        # Фактический профиль обновлён
+        import yaml
+        data = yaml.safe_load(config.profile_path.read_text(encoding="utf-8"))
+        assert data["user"]["goal"] == "Новая цель"
+        assert data["user"]["topics"] == []
