@@ -34,7 +34,7 @@ from kb_agent.config import load_config
 from kb_agent.core.search import SearchEngine
 from kb_agent.core.insights import InsightsEngine
 from kb_agent.processing.llm_client import LLMClient
-from kb_agent.sources.registry import SOURCE_TYPES, normalize_source
+from kb_agent.sources.registry import SOURCE_TYPES, SourceRegistry, normalize_source
 from kb_agent.storage.pending import PendingManager
 from kb_agent.storage.state import StateManager
 from kb_agent.utils.logger import setup_logger
@@ -259,6 +259,12 @@ _LIST_TOOLS: list[Tool] = [
         "Получение инсайтов базы знаний (связи, повторяющиеся темы).",
         {"type": "object", "properties": {}, "additionalProperties": False},
         InsightOutput.model_json_schema(),
+    ),
+    _read_only_tool(
+        "kb_sources_status",
+        "Получение состояния (health) всех источников: список, тип, URL, флаг включён/выключен, время последней проверки и обновления.",
+        {"type": "object", "properties": {}, "additionalProperties": False},
+        {"type": "object", "properties": {}},
     ),
     _write_tool(
         "kb_add_source",
@@ -527,6 +533,43 @@ async def handle_call_tool(name: str, arguments: Optional[dict[str, Any]]) -> An
                 lines.append("")
             result_text = "\n".join(lines) if lines else "Инсайтов пока нет."
             return [TextContent(type="text", text=result_text)], insights_output
+
+        elif name == "kb_sources_status":
+            registry = SourceRegistry(sources_path=config.sources_path, state=state)
+            sources = registry.list(enabled_only=False)
+            items = [
+                {
+                    "source_id": s.id,
+                    "source_type": s.type,
+                    "url": s.url,
+                    "enabled": s.enabled,
+                    "last_checked": s.last_checked,
+                    "last_updated": s.last_updated,
+                }
+                for s in sources
+            ]
+            enabled_count = sum(1 for s in sources if s.enabled)
+            disabled_count = len(sources) - enabled_count
+            lines = [
+                "## Состояние источников",
+                f"Всего: {len(sources)}, включено: {enabled_count}, выключено: {disabled_count}",
+                "",
+            ]
+            for s in items:
+                status = "✓ включён" if s["enabled"] else "✗ выключен"
+                lines.append(f"- {s['source_id']} | {s['source_type']} | {s['url']} | {status}")
+                if s["last_checked"]:
+                    lines.append(f"  Последняя проверка: {s['last_checked']}")
+                if s["last_updated"]:
+                    lines.append(f"  Последнее обновление: {s['last_updated']}")
+            result_text = "\n".join(lines) if lines else "Источников не найдено."
+            output = {
+                "total": len(sources),
+                "enabled": enabled_count,
+                "disabled": disabled_count,
+                "sources": items,
+            }
+            return [TextContent(type="text", text=result_text)], output
 
         # ---- Write-инструменты (Этап 4) ----
 

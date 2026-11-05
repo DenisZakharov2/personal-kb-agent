@@ -24,6 +24,41 @@ class CatalogGenerator:
         self.vault = vault_manager
 
     @staticmethod
+    def _sanitize_frontmatter(fm_text: str) -> str:
+        """Экранирует YAML-значения, которые ``safe_load`` не примет вне кавычек.
+
+        PyYAML не принимает:
+        - скаляр, начинающийся с ``@`` (например ``источник: @ragnarokzone``),
+        - строку с ``: `` внутри значения (например ``title: Что-то: с двоеточием``),
+        что ломает mapping. Оборачиваем такие значения в одинарные кавычки,
+        если они ещё не экранированы.
+        """
+        fixed_lines: list[str] = []
+        for line in fm_text.splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#"):
+                fixed_lines.append(line)
+                continue
+            colon_pos = stripped.find(": ")
+            if colon_pos == -1:
+                fixed_lines.append(line)
+                continue
+            key = stripped[:colon_pos]
+            value = stripped[colon_pos + 2:]
+            # Не в кавычках и содержит спецсимволы YAML — экранируем.
+            if value and value[0] not in ('"', "'") and (
+                value.startswith("@")
+                or ": " in value
+                or value.startswith(("- ", "#", "*", "[", "{"))
+                or value.lower() in ("true", "false", "null", "~")
+            ):
+                indent = line[: len(line) - len(line.lstrip())]
+                value_escaped = "'" + value.replace("'", "''") + "'"
+                line = f"{indent}{key}: {value_escaped}"
+            fixed_lines.append(line)
+        return "\n".join(fixed_lines)
+
+    @staticmethod
     def _parse_frontmatter(content: str, note_path: Optional[Path] = None) -> dict:
         if not content.startswith("---\n"):
             return {}
@@ -33,15 +68,18 @@ class CatalogGenerator:
         fm_text = content[4:end]
         try:
             return yaml.safe_load(fm_text) or {}
-        except Exception as exc:  # noqa: BLE001
-            # Не молча скрываем битый frontmatter — предупреждаем, но не
-            # прерываем генерацию каталога из-за одной заметки (P2-09).
-            logger.warning(
-                "Не удалось разобрать frontmatter %s: %s",
-                note_path or "<неизвестно>",
-                exc,
-            )
-            return {}
+        except Exception:  # noqa: BLE001
+            # Пробуем починить значения, начинающиеся с @, и повторить парсинг
+            # (старые заметки могли быть записаны до экранирования).
+            try:
+                return yaml.safe_load(CatalogGenerator._sanitize_frontmatter(fm_text)) or {}
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "Не удалось разобрать frontmatter %s: %s",
+                    note_path or "<неизвестно>",
+                    exc,
+                )
+                return {}
 
     def generate(self, output_path: Optional[Path] = None) -> Path:
         """Генерирует Каталог.md и возвращает путь к нему."""

@@ -24,6 +24,7 @@ import yaml
 
 from kb_agent.config import load_config
 from kb_agent.processing.pipeline import Pipeline, run_digest
+from kb_agent.sources.registry import SourceRegistry
 from kb_agent.storage.state import StateManager
 from kb_agent.storage.vault import VaultManager
 from kb_agent.utils.logger import setup_logger
@@ -389,11 +390,27 @@ def process_doctor(
                 }
             )
 
+        # 6. Состояние источников (health): список всех источников из реестра.
+        registry = SourceRegistry(sources_path=config.sources_path, state=state)
+        all_sources = registry.list(enabled_only=False)
+        sources_health = [
+            {
+                "source_id": s.id,
+                "source_type": s.type,
+                "url": s.url,
+                "enabled": s.enabled,
+                "last_checked": s.last_checked,
+                "last_updated": s.last_updated,
+            }
+            for s in all_sources
+        ]
+
         state.close()
 
         result = {
             "issues": issues,
             "count": len(issues),
+            "sources": sources_health,
             "kinds": {
                 kind: sum(1 for i in issues if i["kind"] == kind)
                 for kind in {
@@ -414,6 +431,22 @@ def process_doctor(
                     typer.echo(f"  {kind}: {number}")
             if not issues:
                 typer.echo("Целостность в порядке, проблем не выявлено.")
+
+            # Вывод состояния источников (health).
+            typer.echo("")
+            typer.echo("Состояние источников:")
+            if not sources_health:
+                typer.echo("  Источников не найдено. Добавьте: kb-agent sources add ...")
+            else:
+                for s in sources_health:
+                    status = "✓ включён" if s["enabled"] else "✗ выключен"
+                    typer.echo(
+                        f"  {s['source_id']} | {s['source_type']} | {s['url']} | {status}"
+                    )
+                    if s["last_checked"]:
+                        typer.echo(f"    Последняя проверка: {s['last_checked']}")
+                    if s["last_updated"]:
+                        typer.echo(f"    Последнее обновление: {s['last_updated']}")
     except Exception as exc:  # noqa: BLE001
         logger.exception("Ошибка doctor")
         state.close()
