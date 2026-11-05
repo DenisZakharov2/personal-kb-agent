@@ -266,6 +266,36 @@ _LIST_TOOLS: list[Tool] = [
         {"type": "object", "properties": {}, "additionalProperties": False},
         {"type": "object", "properties": {}},
     ),
+    _read_only_tool(
+        "kb_list_proposals",
+        "Список предложений по улучшению (self-improve): ID, цель, имя цели, версии, статус, причина, дата создания. Поддерживает фильтр по статусу.",
+        {
+            "type": "object",
+            "properties": {
+                "status": {
+                    "type": "string",
+                    "description": "Фильтр по статусу: proposed / confirmed / applied / rejected / failed",
+                    "enum": ["proposed", "confirmed", "applied", "rejected", "failed"],
+                    "default": "proposed",
+                }
+            },
+            "additionalProperties": False,
+        },
+        {"type": "object", "properties": {}},
+    ),
+    _read_only_tool(
+        "kb_get_proposal",
+        "Детали одного предложения по улучшению по proposal_id.",
+        {
+            "type": "object",
+            "properties": {
+                "proposal_id": {"type": "string", "description": "Идентификатор предложения"}
+            },
+            "required": ["proposal_id"],
+            "additionalProperties": False,
+        },
+        {"type": "object", "properties": {}},
+    ),
     _write_tool(
         "kb_add_source",
         "Создать pending-запрос на добавление источника (Telegram/YouTube). Требует подтверждения через отдельный человеческий канал: `kb-agent confirm <change_id>`.",
@@ -571,6 +601,88 @@ async def handle_call_tool(name: str, arguments: Optional[dict[str, Any]]) -> An
             }
             return [TextContent(type="text", text=result_text)], output
 
+        elif name == "kb_list_proposals":
+            status = arguments.get("status", "proposed") or "proposed"
+            allowed = ("proposed", "confirmed", "applied", "rejected", "failed")
+            if status not in allowed:
+                return _error_result(
+                    "invalid_argument",
+                    f"Недопустимый статус: {status}. Доступны: {', '.join(allowed)}.",
+                )
+            rows = state.list_proposals(status=status)
+            items = [
+                {
+                    "proposal_id": r["proposal_id"],
+                    "target": r["target"],
+                    "target_name": r["target_name"],
+                    "current_version": r["current_version"],
+                    "proposed_version": r["proposed_version"],
+                    "status": r["status"],
+                    "reason": r["reason"],
+                    "created_at": r["created_at"],
+                    "test_passed": bool(r["test_passed"]),
+                }
+                for r in rows
+            ]
+            lines = [
+                f"## Предложения по улучшению (статус: {status}, количество: {len(items)})",
+                "",
+            ]
+            for it in items:
+                lines.append(
+                    f"- {it['proposal_id']} | {it['target']} / {it['target_name']} | "
+                    f"v{it['current_version']} → v{it['proposed_version']} | {it['status']}"
+                )
+                if it["reason"]:
+                    lines.append(f"  Причина: {it['reason']}")
+                lines.append(f"  Создано: {it['created_at']}")
+            result_text = "\n".join(lines) if lines else f"Предложений со статусом '{status}' нет."
+            return [TextContent(type="text", text=result_text)], {
+                "status": status,
+                "count": len(items),
+                "proposals": items,
+            }
+
+        elif name == "kb_get_proposal":
+            proposal_id = arguments.get("proposal_id", "")
+            if not proposal_id:
+                return _error_result("invalid_argument", "Поле 'proposal_id' обязательно")
+            row = state.get_proposal(proposal_id)
+            if row is None:
+                return _error_result(
+                    "not_found", f"Предложение с ID {proposal_id} не найдено"
+                )
+            output = {
+                "proposal_id": row["proposal_id"],
+                "target": row["target"],
+                "target_name": row["target_name"],
+                "current_version": row["current_version"],
+                "proposed_version": row["proposed_version"],
+                "diff": row["diff"],
+                "reason": row["reason"],
+                "status": row["status"],
+                "created_at": row["created_at"],
+                "confirmed_at": row["confirmed_at"],
+                "applied_at": row["applied_at"],
+                "confirmed_by": row["confirmed_by"],
+                "test_passed": bool(row["test_passed"]),
+            }
+            lines = [
+                f"## Предложение: {row['proposal_id']}",
+                f"Цель: {row['target']} / {row['target_name']}",
+                f"Версия: {row['current_version']} → {row['proposed_version']}",
+                f"Статус: {row['status']}",
+                f"Причина: {row['reason']}",
+                f"Создано: {row['created_at']}",
+                f"Тест пройден: {bool(row['test_passed'])}",
+            ]
+            if row["diff"]:
+                lines.append("")
+                lines.append("### Diff")
+                lines.append(row["diff"])
+            result_text = "\n".join(lines)
+            return [TextContent(type="text", text=result_text)], output
+
         # ---- Write-инструменты (Этап 4) ----
 
         elif name == "kb_add_source":
@@ -684,6 +796,29 @@ async def handle_call_tool(name: str, arguments: Optional[dict[str, Any]]) -> An
                 f"change_id: {change_id}",
                 f"prompt_name: {prompt_name}",
                 f"version: {version if version is not None else 'предыдущая'}",
+                "",
+                "Статус: pending (ожидает подтверждения)",
+                "Чтобы применить, выполните команду человека: `kb-agent confirm <change_id>`.",
+            ]
+            return _ok_text("\n".join(lines))
+
+        elif name == "kb_reject_proposal":
+            proposal_id = arguments.get("proposal_id", "")
+            reason = arguments.get("reason", "") or ""
+            if not proposal_id:
+                return _error_result("invalid_argument", "Поле 'proposal_id' обязательно")
+            pm = PendingManager(state)
+            change_id = pm.create_change(
+                action="reject_proposal",
+                entity_type="proposal",
+                entity_id=proposal_id,
+                parameters={"proposal_id": proposal_id, "reason": reason},
+            )
+            lines = [
+                "## Pending-запрос на отклонение предложения улучшения",
+                f"change_id: {change_id}",
+                f"proposal_id: {proposal_id}",
+                f"причина: {reason or '(не указана)'}",
                 "",
                 "Статус: pending (ожидает подтверждения)",
                 "Чтобы применить, выполните команду человека: `kb-agent confirm <change_id>`.",

@@ -165,7 +165,7 @@ _SCHEMA = [
         CREATE TABLE IF NOT EXISTS pending_changes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             change_id TEXT UNIQUE NOT NULL,
-            action TEXT NOT NULL CHECK (action IN ('add_source','remove_source','enable_source','update_profile','revert_prompt')),
+            action TEXT NOT NULL CHECK (action IN ('add_source','remove_source','enable_source','update_profile','revert_prompt','reject_proposal')),
             entity_type TEXT NOT NULL,
             entity_id TEXT NOT NULL,
             parameters TEXT NOT NULL,
@@ -234,7 +234,7 @@ _SCHEMA = [
         CREATE TABLE pending_changes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             change_id TEXT UNIQUE NOT NULL,
-            action TEXT NOT NULL CHECK (action IN ('add_source','remove_source','enable_source','update_profile','revert_prompt')),
+            action TEXT NOT NULL CHECK (action IN ('add_source','remove_source','enable_source','update_profile','revert_prompt','reject_proposal')),
             entity_type TEXT NOT NULL,
             entity_id TEXT NOT NULL,
             parameters TEXT NOT NULL,

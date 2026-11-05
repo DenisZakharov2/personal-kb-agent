@@ -29,6 +29,7 @@ ALLOWED_ACTIONS = (
     "enable_source",
     "update_profile",
     "revert_prompt",
+    "reject_proposal",
 )
 
 ALLOWED_STATUSES = ("pending", "confirmed", "applied", "rejected", "failed", "expired")
@@ -328,6 +329,12 @@ class PendingManager:
                 self._update_profile(parameters)
             elif action == "revert_prompt":
                 self._revert_prompt(parameters, conn=c)
+            elif action == "reject_proposal":
+                proposal_id = parameters["proposal_id"]
+                if not self.state.update_proposal(proposal_id, status="rejected"):
+                    return self._apply_failed(
+                        change, c, own, f"Предложение {proposal_id} не найдено"
+                    )
             else:
                 logger.error("Неизвестное действие: %s", action)
                 return False

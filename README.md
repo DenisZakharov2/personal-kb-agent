@@ -333,6 +333,54 @@ kb-agent feedback metrics
 kb-agent self-improve
 ```
 
+## Самоулучшение (self-improve)
+
+Все подкоманды поддерживают флаг `--json` (`-j`) для машинного вывода.
+
+```bash
+# Показать метрики обратной связи и список предложений
+kb-agent self-improve
+
+# Список предложений (по умолчанию со статусом proposed)
+kb-agent self-improve list
+kb-agent self-improve list --status proposed
+kb-agent self-improve list --status rejected --json
+
+# Предложить изменение промпта
+kb-agent self-improve propose-prompt agent_prompt "нужна ясность суммаризации" "новый текст промпта"
+# либо содержимое из файла:
+kb-agent self-improve propose-prompt agent_prompt "причина" --content-file prompts/new_agent_prompt.md
+
+# Применить предложение промпта (требует проверки тестовым набором и подтверждения)
+kb-agent self-improve apply-prompt <proposal_id> "итоговый текст промпта"
+kb-agent self-improve apply-prompt <proposal_id> --content-file prompts/final.md --confirmed-by user
+
+# Отклонить предложение
+kb-agent self-improve reject <proposal_id>
+
+# Предложить изменение конфигурации
+kb-agent self-improve propose-config data/sources.yaml "старое" "новое" "причина"
+
+# Применить предложение конфига
+kb-agent self-improve apply-config <proposal_id> "итоговое значение"
+
+# Откатить промпт к версии
+kb-agent self-improve rollback agent_prompt 1
+```
+
+Предложения хранятся в SQLite (`prompt_proposals`) и проходят путь:
+`proposed → confirmed → applied/rejected/failed`.
+
+Применение промпта и конфига требует проверки изменения на тестовом наборе
+(`tests/eval_set.json`) и явного подтверждения пользователя — изменения не
+применяются автоматически. Откат промпта (`rollback`) тоже требует
+подтверждения.
+
+Агент собирает ваши оценки (`kb-agent feedback rate/tell`) и считает среднюю
+оценку. Автоматические предложения по улучшению формируются на основе накопленной
+обратной связи.
+```
+
 Агент собирает ваши оценки и считает среднюю оценку. Автоматические предложения по улучшению промптов и их применение находятся в разработке — пока это не полностью замкнутый цикл.
 
 ---
