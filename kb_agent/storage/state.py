@@ -663,6 +663,30 @@ class StateManager:
         try:
             if own:
                 c.execute("BEGIN IMMEDIATE")
+            # Проверяем существующую запись: если content_hash не изменился,
+            # не перезаписываем и не увеличиваем revision (идемпотентность).
+            existing = c.execute(
+                "SELECT content_hash, revision FROM notes WHERE note_id = ?",
+                (note_id,),
+            ).fetchone()
+            if (
+                existing is not None
+                and existing["content_hash"] is not None
+                and existing["content_hash"] == content_hash
+            ):
+                # Содержимое не изменилось — обновляем только FTS-проекцию,
+                # revision оставляем без изменений.
+                c.execute("DELETE FROM notes_fts WHERE note_id = ?", (note_id,))
+                c.execute(
+                    """
+                    INSERT INTO notes_fts (note_id, title, tags, topic, content)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (note_id, title, tags, topic, content),
+                )
+                if own:
+                    c.commit()
+                return
             c.execute(
                 """
                 INSERT INTO notes (note_id, title, tags, topic, source_id, external_id, canonical_url,

@@ -93,7 +93,7 @@ class TestReindex:
         assert r2.exit_code == 0
 
         row = state.get_note("note-rebuild-1")
-        assert row["revision"] == 2  # обновлена при повторном индексировании
+        assert row["revision"] == 1  # содержимое не менялось — revision не растёт
         found = state.search("призрачный", limit=5)
         assert found == []
         found = state.search("первой", limit=5)
@@ -116,3 +116,70 @@ class TestReindex:
         notes = state.connect().execute("SELECT note_id FROM notes").fetchall()
         assert len(notes) == 1
         assert notes[0]["note_id"]  # сгенерированный идентификатор не пустой
+
+    def test_reindex_revision_increments_on_content_change(self, config, state, monkeypatch):
+        """При изменении содержимого файла revision увеличивается."""
+        monkeypatch.setattr(process_mod, "load_config", lambda: config)
+
+        _write_note(
+            config.vault_path,
+            note_id="note-change-1",
+            title="Заголовок",
+            topic="Тема",
+            tags="тест",
+            content="Версия один.",
+            file_name="2026-03-01_Один.md",
+        )
+
+        runner = CliRunner()
+        r1 = runner.invoke(app, ["reindex", "--json"], prog_name="kb-agent")
+        assert r1.exit_code == 0
+
+        revision_after_first = state.get_note("note-change-1")["revision"]
+
+        # Меняем содержимое того же файла (тот же note_id)
+        _write_note(
+            config.vault_path,
+            note_id="note-change-1",
+            title="Заголовок",
+            topic="Тема",
+            tags="тест",
+            content="Версия два — обновлённое содержимое.",
+            file_name="2026-03-01_Один.md",
+        )
+
+        r2 = runner.invoke(app, ["reindex", "--json"], prog_name="kb-agent")
+        assert r2.exit_code == 0
+
+        revision_after_second = state.get_note("note-change-1")["revision"]
+        assert revision_after_second == revision_after_first + 1
+
+    def test_reindex_removes_notes_row_for_deleted_file(self, config, state, monkeypatch):
+        """При удалении файла из vault запись удаляется и из notes, и из notes_fts."""
+        monkeypatch.setattr(process_mod, "load_config", lambda: config)
+
+        _write_note(
+            config.vault_path,
+            note_id="note-delete-1",
+            title="Будет удалён",
+            topic="Тема",
+            tags="тест",
+            content="Контент для удаления.",
+            file_name="2026-04-01_Удалить.md",
+        )
+
+        runner = CliRunner()
+        r1 = runner.invoke(app, ["reindex", "--json"], prog_name="kb-agent")
+        assert r1.exit_code == 0
+
+        # Удаляем файл из vault
+        file_path = config.vault_path / "Тема" / "2026-04-01_Удалить.md"
+        file_path.unlink()
+
+        r2 = runner.invoke(app, ["reindex", "--json"], prog_name="kb-agent")
+        assert r2.exit_code == 0
+
+        # Записи должны быть удалены из обеих таблиц
+        assert state.get_note("note-delete-1") is None
+        found = state.search("удаления", limit=5)
+        assert found == []

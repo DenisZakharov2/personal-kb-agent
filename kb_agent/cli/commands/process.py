@@ -171,7 +171,8 @@ def process_reindex(
             seen_note_ids.append(note_id)
             indexed += 1
 
-        # Удаляем FTS-записи, для которых больше нет файла в vault (прюекция rebuildable).
+        # Удаляем FTS-записи и записи в notes, для которых больше нет файла в vault
+        # (прюекция rebuildable, метаданные синхронизируются с vault).
         conn = state.connect()
         if seen_note_ids:
             placeholders = ",".join("?" * len(seen_note_ids))
@@ -179,8 +180,13 @@ def process_reindex(
                 f"DELETE FROM notes_fts WHERE note_id NOT IN ({placeholders})",
                 tuple(seen_note_ids),
             )
+            conn.execute(
+                f"DELETE FROM notes WHERE note_id NOT IN ({placeholders})",
+                tuple(seen_note_ids),
+            )
         else:
             conn.execute("DELETE FROM notes_fts")
+            conn.execute("DELETE FROM notes")
         conn.commit()
         state.close()
 
