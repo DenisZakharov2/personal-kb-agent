@@ -63,11 +63,12 @@ def interview_status(
     config = load_config()
     interview = InterviewManager(config)
 
-    if json_output:
-        state = StateManager(config.db_path)
-        try:
-            version = state.init_db()
-            stats = state.stats()
+    state = StateManager(config.db_path)
+    try:
+        version = state.init_db()
+        stats = state.stats()
+
+        if json_output:
             _output_json(
                 {
                     "profile_exists": interview.profile_exists(),
@@ -77,19 +78,13 @@ def interview_status(
                     "stats": stats,
                 }
             )
-        finally:
-            state.close()
-        return
+            return
 
-    if interview.profile_exists():
-        typer.echo(f"Профиль: {interview.profile_path} (существует)")
-    else:
-        typer.echo("Профиль: не создан. Запустите 'kb-agent interview init'.")
+        if interview.profile_exists():
+            typer.echo(f"Профиль: {interview.profile_path} (существует)")
+        else:
+            typer.echo("Профиль: не создан. Запустите 'kb-agent interview init'.")
 
-    state = StateManager(config.db_path)
-    try:
-        version = state.init_db()
-        stats = state.stats()
         typer.echo(f"База данных: {config.db_path} (схема v{version})")
         typer.echo(f"Элементов в очереди: {stats.get('raw_queue', 0)}")
         typer.echo(f"Обратная связь: {stats.get('feedback', 0)}")
