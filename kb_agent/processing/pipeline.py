@@ -16,7 +16,11 @@ from typing import Optional
 import yaml
 
 from kb_agent.config import AppConfig
-from kb_agent.core.prompts import SUMMARIZE_PROMPT_NAME, ensure_prompt_seeded
+from kb_agent.core.prompts import (
+    SUMMARIZE_PROMPT_NAME,
+    ensure_prompt_seeded,
+    get_active_system_prompt,
+)
 from kb_agent.core.relevance import RelevanceGate
 from kb_agent.sources.registry import ensure_sources_file
 from kb_agent.processing.llm_client import LLMClient
@@ -235,11 +239,17 @@ class Pipeline:
 
                 # Структурированная суммаризация через LLM (P2-10: JSON-схема,
                 # валидация темы против профиля, повтор при невалидной схеме)
+                # Активная версия промпта берётся из prompt_history (её можно
+                # редактировать и откатывать через self-improve).
+                summarize_prompt = get_active_system_prompt(
+                    self.state, SUMMARIZE_PROMPT_NAME
+                )
                 summary = self.llm.summarize_structured(
                     raw_text=item["raw_text"] or "",
                     source_type=source_type,
                     source_name=item["source_id"],
                     topics=list(self.relevance.topics) if self.relevance else None,
+                    system_prompt=summarize_prompt,
                 )
 
                 if not summary.content.strip():

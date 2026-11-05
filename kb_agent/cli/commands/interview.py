@@ -15,6 +15,7 @@ import typer
 from kb_agent.config import load_config
 from kb_agent.core.interview import InterviewManager
 from kb_agent.core.import_core import run_import_core
+from kb_agent.core.prompts import ensure_prompt_seeded
 from kb_agent.storage.state import StateManager
 from kb_agent.utils.logger import setup_logger
 from kb_agent.cli.output import output_json as _output_json
@@ -37,6 +38,16 @@ def interview_init() -> None:
     profile = interview.run_init_interview()
     saved_path = interview.save_profile(profile)
     typer.echo(f"\nПрофиль сохранён: {saved_path}")
+
+    # Сеем базовые версии промптов в prompt_history, чтобы работали
+    # откат промпта (self-improve rollback) и MCP-инструмент kb_revert_prompt.
+    state = StateManager(config.db_path)
+    try:
+        state.init_db()
+        ensure_prompt_seeded(config, state)
+    finally:
+        state.close()
+
     typer.echo("База знаний готова к наполнению (Этап 2).")
 
 
