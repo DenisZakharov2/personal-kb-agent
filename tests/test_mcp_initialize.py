@@ -19,6 +19,7 @@ class TestMcpInitialize:
             capabilities=ServerCapabilities(tools=ToolsCapability(listChanged=False)),
         )
         assert options.capabilities.tools is not None
+        assert options.capabilities.tools.listChanged is False
 
     def test_initialize_list_tools_call_structured(self, config, monkeypatch):
         """initialize → tools/list → tools/call возвращают структурированные данные."""
@@ -34,6 +35,14 @@ class TestMcpInitialize:
         assert "kb_get_note" in tool_names
         assert "kb_get_insights" in tool_names
         assert "kb_confirm_change" not in tool_names
+
+        # Каждый инструмент имеет inputSchema (P2-12 + capabilities)
+        for tool in tools:
+            assert tool.inputSchema is not None
+            assert isinstance(tool.inputSchema, dict)
+            assert tool.inputSchema.get("type") == "object"
+            assert "additionalProperties" in tool.inputSchema
+            assert tool.inputSchema["additionalProperties"] is False
 
         # tools/call (пустая БД — LLM не вызывается, сеть не нужна)
         result = asyncio.run(handle_call_tool("kb_search", {"query": "тест", "limit": 3}))
