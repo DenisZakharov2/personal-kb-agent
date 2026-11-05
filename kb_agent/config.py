@@ -44,7 +44,13 @@ DEFAULT_VAULT_SUBDIR = "vault"
 
 
 def _read_env_file(path: Path) -> dict[str, str]:
-    """Читает .env файл вручную (без библиотеки python-dotenv)."""
+    """Читает .env файл вручную (без библиотеки python-dotenv).
+
+    Поддерживает:
+    - Префикс `export ` в начале строки
+    - Инлайн-комментарии после `#` (не внутри кавычек)
+    - Значения в одинарных/двойных кавычках
+    """
     env_vars: dict[str, str] = {}
     if not path.exists():
         return env_vars
@@ -56,33 +62,30 @@ def _read_env_file(path: Path) -> dict[str, str]:
         line = raw_line.strip()
         if not line or line.startswith("#"):
             continue
+        # Убираем префикс export
+        if line.startswith("export "):
+            line = line[7:].lstrip()
         if "=" not in line:
             continue
         key, _, value = line.partition("=")
         key = key.strip()
-        value = value.strip().strip('"').strip("'")
+        value = value.strip()
+        # Удаляем инлайн-комментарии (не внутри кавычек)
+        # Простой подход: если есть # и он не в кавычках
+        in_single = False
+        in_double = False
+        for i, ch in enumerate(value):
+            if ch == "'" and not in_double:
+                in_single = not in_single
+            elif ch == '"' and not in_single:
+                in_double = not in_double
+            elif ch == "#" and not in_single and not in_double:
+                value = value[:i].rstrip()
+                break
+        value = value.strip('"').strip("'")
         if key:
             env_vars[key] = value
     return env_vars
-
-
-def _resource_path(package: str, resource_name: str) -> Path | None:
-    """Возвращает путь к упакованному ресурсу через importlib.resources."""
-    try:
-        # importlib.resources.files().joinpath() возвращает Traversable,
-        # используем as_file() для получения пути к файлу (работает и для wheel).
-        traversable = importlib_resources.files(package).joinpath(resource_name)
-        # В Python 3.11+ используем as_file(), в 3.10+ есть context manager
-        try:
-            with importlib_resources.as_file(traversable) as file_path:
-                return Path(file_path)
-        except AttributeError:
-            # Fallback для старых версий - если это обычный файл
-            if hasattr(traversable, '__fspath__'):
-                return Path(traversable.__fspath__())
-            return None
-    except (FileNotFoundError, ModuleNotFoundError, ImportError, TypeError, OSError):
-        return None
 
 
 def read_resource_text(package: str, resource_name: str) -> str | None:
@@ -211,7 +214,7 @@ class AppConfig(BaseModel):
 def load_config(env_file: str | None = None) -> AppConfig:
     """Загружает конфигурацию.
 
-    Приоритет: переменные окружения > файл .env (явный) > стандартный .env > значения по умолчанию.
+    Приоритет: переменные окружения > явный env_file > стандартный .env > значения по умолчанию.
 
     Производные пути (db, sources, profile, log, vault) вычисляются
     относительно итогового data_dir, если не заданы явно.
@@ -268,14 +271,11 @@ def load_config(env_file: str | None = None) -> AppConfig:
 
 
 def get_prompt_path(prompt_name: str) -> Path | None:
-    """Возвращает путь к упакованному промпту через importlib.resources.
+    """Возвращает путь к промпту в config/prompts (режим разработки).
 
-    Сначала ищет в kb_agent.resources/prompts, затем в config/prompts
-    (для разработки из исходников).
+    Для упакованных ресурсов (wheel) используйте get_prompt_text,
+    который читает через importlib.resources.
     """
-    path = _resource_path(RESOURCES_PACKAGE, f"prompts/{prompt_name}")
-    if path is not None:
-        return path
     # Fallback для разработки из исходников
     fallback = PROJECT_ROOT / "config" / "prompts" / prompt_name
     if fallback.exists():

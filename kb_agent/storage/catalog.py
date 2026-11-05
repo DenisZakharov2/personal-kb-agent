@@ -45,10 +45,7 @@ class CatalogGenerator:
             value = stripped[colon_pos + 2:]
             # Не в кавычках и содержит спецсимволы YAML — экранируем.
             if value and value[0] not in ('"', "'") and (
-                value.startswith("@")
-                or ": " in value
-                or value.startswith(("- ", "#", "*", "[", "{"))
-                or value.lower() in ("true", "false", "null", "~")
+                value.startswith(("@", "- ", "#", "*", "[", "{")) or ": " in value or value.lower() in ("true", "false", "null", "~")
             ):
                 indent = line[: len(line) - len(line.lstrip())]
                 value_escaped = "'" + value.replace("'", "''") + "'"

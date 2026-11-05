@@ -407,35 +407,6 @@ class Pipeline:
         atomic_write_text(digest_path, "\n".join(lines), backup=True)
         return digest_path
 
-    def _extract_tags(self, text: str) -> list[str]:
-        """Извлекает теги из ответа LLM (строка вида «6. Теги: a, b»)."""
-        for line in text.splitlines():
-            # Снимаем нумерацию/маркеры списка: «6. », «- », «* » и т. п.
-            candidate = line.strip().lstrip("0123456789.)-—*# ").strip()
-            if not candidate.lower().startswith(("теги", "tags")):
-                continue
-            _, _, value = candidate.partition(":")
-            cleaned = [
-                tag.strip(" .`*_#")
-                for tag in value.replace(";", ",").split(",")
-                if tag.strip(" .`*_#")
-            ]
-            return cleaned[:10]
-        return []
-
-    @staticmethod
-    def _extract_topic(text: str) -> str:
-        """Извлекает тему заметки из ответа LLM (строка «Тема: ...»)."""
-        for line in text.splitlines():
-            candidate = line.strip().lstrip("0123456789.)-—*# ").strip()
-            if not candidate.lower().startswith(("тема", "topic")):
-                continue
-            _, _, value = candidate.partition(":")
-            value = value.strip().strip("`*_ ").strip()
-            if value:
-                return value[:80]
-        return ""
-
     @staticmethod
     def _make_note_id(received_at: str) -> str:
         """note_id без пробелов: 2026-11-04T10_ab12cd34."""

@@ -27,7 +27,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install ".[youtube]"
+          pip install -e .
 
       - name: Restore previous state (state.db + vault)
         uses: actions/download-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
@@ -64,10 +64,10 @@ jobs:
             cp "${{ runner.temp }}/kb-restore/state.db" "${{ env.KB_DB_PATH }}"
             echo "Restored state.db from previous run"
           fi
-          # Восстанавливаем vault, если есть
+          # Восстанавливаем vault полностью (сохраняя структуру папок), если есть
           if [ -d "${{ runner.temp }}/kb-restore" ] && [ "$(ls -A ${{ runner.temp }}/kb-restore)" ]; then
-            # Копируем только .md файлы (vault), не state.db
-            find "${{ runner.temp }}/kb-restore" -name "*.md" -exec cp {} "${{ env.KB_VAULT_PATH }}/" \; 2>/dev/null || true
+            # Копируем всё содержимое vault рекурсивно, сохраняя структуру папок
+            cp -r "${{ runner.temp }}/kb-restore/." "${{ env.KB_VAULT_PATH }}/" 2>/dev/null || true
             echo "Restored vault from previous run"
           fi
 
@@ -88,5 +88,5 @@ jobs:
         with:
           name: kb-state
           path: |
-            ${{ env.KB_VAULT_PATH }}
+            ${{ env.KB_VAULT_PATH }}/
             ${{ env.KB_DB_PATH }}

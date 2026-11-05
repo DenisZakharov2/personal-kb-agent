@@ -37,7 +37,7 @@ class TestArchiveRestore:
         from kb_agent.storage.vault import VaultManager
 
         vault = VaultManager(config)
-        path = vault.write_note(
+        vault.write_note(
             note_id="n-vault-arc",
             source_id="tg_test",
             source_type="telegram",

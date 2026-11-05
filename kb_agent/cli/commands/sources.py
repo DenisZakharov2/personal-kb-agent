@@ -18,6 +18,7 @@ import typer
 from kb_agent.cli.output import output_json as _output_json
 from kb_agent.config import load_config
 from kb_agent.sources.registry import SourceConfig, SourceRegistry, normalize_source
+from kb_agent.storage.state import StateManager
 from kb_agent.utils.logger import setup_logger
 
 app = typer.Typer(help="Управление источниками данных (Этап 4/5)")

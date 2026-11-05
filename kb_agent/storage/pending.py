@@ -37,8 +37,9 @@ ALLOWED_STATUSES = ("pending", "confirmed", "applied", "rejected", "failed", "ex
 class PendingManager:
     """Менеджер pending-запросов для write-операций."""
 
-    def __init__(self, state: StateManager) -> None:
+    def __init__(self, state: StateManager, config=None) -> None:
         self.state = state
+        self.config = config
 
     # ---- Создание и чтение ----
 
@@ -337,7 +338,7 @@ class PendingManager:
                         f"Источник {parameters['source_id']} не найден",
                     )
             elif action == "update_profile":
-                self._update_profile(parameters)
+                self._update_profile(parameters, config=self.config)
             elif action == "revert_prompt":
                 self._revert_prompt(parameters, conn=c)
             elif action == "reject_proposal":
@@ -408,9 +409,10 @@ class PendingManager:
         if conn is None:
             c.commit()
 
-    def _update_profile(self, parameters: dict) -> None:
+    def _update_profile(self, parameters: dict, config=None) -> None:
         """Обновляет user_profile.yaml на основе параметров."""
-        config = load_config()
+        if config is None:
+            config = load_config()
         profile_path = config.profile_path
 
         if profile_path.exists():
@@ -421,7 +423,7 @@ class PendingManager:
         user = data.setdefault("user", {})
         updates = parameters.get("updates", {})
         if not isinstance(updates, dict):
-            raise ValueError("Поле 'updates' должно быть объектом")
+            raise TypeError("Поле 'updates' должно быть объектом")
         user.update(updates)
 
         profile_path.parent.mkdir(parents=True, exist_ok=True)
@@ -442,7 +444,9 @@ class PendingManager:
         target_version = parameters.get("version")
 
         if target_version is None:
-            # Находим текущую активную версию и берём предыдущую
+            # Находим текущую активную версию и берём предыдущую (максимальную
+            # версию, меньшую текущей активной). Это корректно работает даже
+            # если в истории есть пропуски номеров версий.
             current = c.execute(
                 """
                 SELECT version FROM prompt_history
@@ -452,10 +456,21 @@ class PendingManager:
                 (prompt_name,),
             ).fetchone()
             if not current:
-                # Ошибку пробрасываем наверх, чтобы pending-запрос получил статус failed,
-                # а не «applied» при фактически неприменённом изменении.
                 raise ValueError(f"Нет активной версии промпта {prompt_name}")
-            target_version = current["version"] - 1
+            target_row = c.execute(
+                """
+                SELECT version FROM prompt_history
+                WHERE prompt_name = ? AND version < ?
+                ORDER BY version DESC LIMIT 1
+                """,
+                (prompt_name, current["version"]),
+            ).fetchone()
+            if not target_row:
+                raise ValueError(
+                    f"Нет предыдущей версии для отката промпта {prompt_name} "
+                    f"(текущая версия {current['version']})"
+                )
+            target_version = target_row["version"]
 
         target = c.execute(
             """

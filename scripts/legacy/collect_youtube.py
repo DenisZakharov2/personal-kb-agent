@@ -261,7 +261,7 @@ def cmd_collect(args: argparse.Namespace) -> int:
 
 
 def cmd_transcripts(args: argparse.Namespace) -> int:
-    done = load_set(done_path())
+    load_set(done_path())
     trans_done = load_set(trans_done_path())
     queue = read_queue()
     langs = [l.strip() for l in os.getenv("KB_YT_SUB_LANGS", DEFAULT_SUB_LANGS).split(",") if l.strip()]

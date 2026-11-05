@@ -67,7 +67,7 @@ class TestPrivateNotesNotReturnedToExternalAgent:
 
         result = asyncio.run(handle_call_tool("kb_get_note", {"note_id": "note_public"}))
         assert not _is_error_result(result)
-        text, structured = result
+        _text, structured = result
         assert structured["content"] == "Открытые данные"
         assert structured["is_private"] is False
 
@@ -100,7 +100,7 @@ class TestPrivateNotesNotReturnedToExternalAgent:
         )
 
         result = asyncio.run(handle_call_tool("kb_search", {"query": "информация"}))
-        text, structured = result
+        _text, structured = result
         item_ids = [it["note_id"] for it in structured["items"]]
         assert "note_pub" in item_ids
         # Приватная заметка помечена is_private=True
@@ -127,7 +127,7 @@ class TestPrivateNotesNotReturnedToExternalAgent:
         )
 
         result = asyncio.run(handle_call_tool("kb_search", {"query": "метки"}))
-        text, structured = result
+        _text, structured = result
         for item in structured["items"]:
             assert "is_private" in item
             assert "sensitivity" in item

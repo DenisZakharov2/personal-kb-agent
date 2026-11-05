@@ -46,11 +46,11 @@ app = Server("kb-agent")
 # Allowlist источников и URL (6.1).
 #
 # Только эти хосты разрешаются для добавления через MCP. yt-dlp поддерживает
-# множество протоколов и сайтов, поэтому явно ограничиваем circle доверия
-# conocidosими Telegram/YouTube доменами.
+# множество протоколов и сайтов, поэтому явно ограничиваем круг доверия
+# известными Telegram/YouTube доменами.
 # ---------------------------------------------------------------------------
 
-ALLOWED_HOSTS = {
+ALLOWED_SOURCE_HOSTS = {
     "t.me",
     "www.t.me",
     "telegram.me",
@@ -61,8 +61,12 @@ ALLOWED_HOSTS = {
     "www.youtu.be",
 }
 
-def _is_url_allowed(url: str) -> bool:
-    """Проверяет, что хост URL входит в allowlist (6.1)."""
+def _is_source_url_allowed(url: str) -> bool:
+    """Проверяет, что хост URL входит в allowlist источников (6.1).
+    
+    Используется ТОЛЬКО для валидации при добавлении нового источника через MCP.
+    НЕ используется для определения доверия к контенту заметки.
+    """
     from urllib.parse import urlparse
 
     try:
@@ -74,7 +78,12 @@ def _is_url_allowed(url: str) -> bool:
         return False
     if parsed.scheme not in ("http", "https"):
         return False
-    return host in ALLOWED_HOSTS or host.endswith((".t.me", ".youtube.com", ".youtu.be"))
+    return host in ALLOWED_SOURCE_HOSTS or host.endswith((".t.me", ".youtube.com", ".youtu.be"))
+
+
+# Backward compatibility aliases for tests
+ALLOWED_HOSTS = ALLOWED_SOURCE_HOSTS
+_is_url_allowed = _is_source_url_allowed
 
 
 # ---------------------------------------------------------------------------
@@ -725,7 +734,7 @@ async def handle_call_tool(name: str, arguments: dict[str, Any] | None) -> Any:
                     f"Разрешённые хосты: {', '.join(sorted(ALLOWED_HOSTS))}",
                 )
 
-            pm = PendingManager(state)
+            pm = PendingManager(state, config)
             change_id = pm.create_change(
                 action="add_source",
                 entity_type="source",
@@ -748,7 +757,7 @@ async def handle_call_tool(name: str, arguments: dict[str, Any] | None) -> Any:
             source_id = arguments.get("source_id", "")
             if not source_id:
                 return _error_result("invalid_argument", "Поле 'source_id' обязательно")
-            pm = PendingManager(state)
+            pm = PendingManager(state, config)
             change_id = pm.create_change(
                 action="remove_source", entity_type="source", entity_id=source_id,
                 parameters={"source_id": source_id},
@@ -768,7 +777,7 @@ async def handle_call_tool(name: str, arguments: dict[str, Any] | None) -> Any:
             enabled = bool(arguments.get("enabled", True))
             if not source_id:
                 return _error_result("invalid_argument", "Поле 'source_id' обязательно")
-            pm = PendingManager(state)
+            pm = PendingManager(state, config)
             change_id = pm.create_change(
                 action="enable_source",
                 entity_type="source",
@@ -790,7 +799,7 @@ async def handle_call_tool(name: str, arguments: dict[str, Any] | None) -> Any:
             updates = arguments.get("updates", {})
             if not isinstance(updates, dict):
                 return _error_result("invalid_argument", "Поле 'updates' должно быть объектом.")
-            pm = PendingManager(state)
+            pm = PendingManager(state, config)
             change_id = pm.create_change(
                 action="update_profile", entity_type="profile", entity_id="user",
                 parameters={"updates": updates},
@@ -810,7 +819,7 @@ async def handle_call_tool(name: str, arguments: dict[str, Any] | None) -> Any:
             version = arguments.get("version", None)
             if not prompt_name:
                 return _error_result("invalid_argument", "Поле 'prompt_name' обязательно")
-            pm = PendingManager(state)
+            pm = PendingManager(state, config)
             change_id = pm.create_change(
                 action="revert_prompt", entity_type="prompt", entity_id=prompt_name,
                 parameters={"prompt_name": prompt_name, "version": version},
@@ -831,7 +840,7 @@ async def handle_call_tool(name: str, arguments: dict[str, Any] | None) -> Any:
             reason = arguments.get("reason", "") or ""
             if not proposal_id:
                 return _error_result("invalid_argument", "Поле 'proposal_id' обязательно")
-            pm = PendingManager(state)
+            pm = PendingManager(state, config)
             change_id = pm.create_change(
                 action="reject_proposal",
                 entity_type="proposal",

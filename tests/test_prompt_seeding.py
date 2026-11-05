@@ -76,8 +76,6 @@ class TestInterviewInitSeedsPrompts:
 
     def test_interview_init_seeds_prompts(self, config, state, monkeypatch):
         """После interview init в prompt_history есть активные версии промптов."""
-    def test_interview_init_seeds_prompts(self, config, state, monkeypatch):
-        """После interview init в prompt_history есть активные версии промптов."""
         monkeypatch.setattr(interview_mod, "load_config", lambda: config)
 
         # Замокаем интерактивное интервью — оно не должно запрашивать ввод.

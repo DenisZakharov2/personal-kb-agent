@@ -475,7 +475,7 @@ class SelfImprovementEngine:
 
         rate = passed / total if total else 0.0
         logger.info(
-            "Eval-проверка: %d/%d вопросов пройдено (порог %s)",
+            "Eval-проверка: %s/%s вопросов пройдено (порог %s)",
             passed,
             total,
             EVAL_PASS_THRESHOLD,

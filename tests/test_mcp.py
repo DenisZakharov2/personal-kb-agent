@@ -81,11 +81,11 @@ class TestMcpCapabilities:
         source_ids = {s["source_id"] for s in structured["sources"]}
         assert source_ids == {"tg_rubiconzone", "yt_amorev"}
 
-        tg = [s for s in structured["sources"] if s["source_id"] == "tg_rubiconzone"][0]
+        tg = next(s for s in structured["sources"] if s["source_id"] == "tg_rubiconzone")
         assert tg["enabled"] is True
         assert tg["source_type"] == "telegram"
 
-        yt = [s for s in structured["sources"] if s["source_id"] == "yt_amorev"][0]
+        yt = next(s for s in structured["sources"] if s["source_id"] == "yt_amorev")
         assert yt["enabled"] is False
         assert yt["source_type"] == "youtube"
 
@@ -108,7 +108,7 @@ class TestMcpProposals:
 
         monkeypatch.setattr(mcp_server_mod, "load_config", lambda: config)
 
-        text, structured = asyncio.run(handle_call_tool("kb_list_proposals", {}))
+        __text, structured = asyncio.run(handle_call_tool("kb_list_proposals", {}))
 
         assert structured is not None
         assert structured["status"] == "proposed"
@@ -144,14 +144,14 @@ class TestMcpProposals:
         # Переводим одно в rejected для проверки фильтра.
         state.update_proposal("prop-config-1", status="rejected")
 
-        text, structured = asyncio.run(handle_call_tool("kb_list_proposals", {}))
+        _text, structured = asyncio.run(handle_call_tool("kb_list_proposals", {}))
 
         assert structured is not None
         assert structured["status"] == "proposed"
         assert structured["count"] == 1
         assert structured["proposals"][0]["proposal_id"] == "prop-prompt-1"
 
-        text, structured = asyncio.run(
+        _text, structured = asyncio.run(
             handle_call_tool("kb_list_proposals", {"status": "rejected"})
         )
         assert structured["count"] == 1
@@ -188,7 +188,7 @@ class TestMcpProposals:
             reason="причина",
         )
 
-        text, structured = asyncio.run(
+        _text, structured = asyncio.run(
             handle_call_tool("kb_get_proposal", {"proposal_id": "prop-get-1"})
         )
 

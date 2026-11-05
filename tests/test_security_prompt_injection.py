@@ -165,7 +165,7 @@ class TestMaliciousNoteCannotTriggerActions:
 
         result = asyncio.run(handle_call_tool("kb_search", {"query": "вредоносная"}))
         assert isinstance(result, tuple)
-        text_content, structured = result
+        _text_content, structured = result
         items = structured["items"]
         assert len(items) == 1
         item = items[0]

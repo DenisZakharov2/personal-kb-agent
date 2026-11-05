@@ -92,11 +92,11 @@ class TestSourceNormalization:
         assert st == "youtube"
 
     def test_normalize_generates_source_id_when_missing(self):
-        sid, url, st = normalize_source("youtube", "https://youtube.com/@kanal", source_id=None)
+        sid, _url, _st = normalize_source("youtube", "https://youtube.com/@kanal", source_id=None)
         assert sid == "yt_kanal"
 
     def test_normalize_keeps_explicit_source_id(self):
-        sid, url, st = normalize_source("telegram", "https://t.me/s/chan", source_id="my_custom_id")
+        sid, _url, st = normalize_source("telegram", "https://t.me/s/chan", source_id="my_custom_id")
         assert sid == "my_custom_id"
         assert st == "telegram"
 

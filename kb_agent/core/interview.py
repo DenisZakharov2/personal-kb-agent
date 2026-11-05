@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import ClassVar
 
 import yaml
 
@@ -18,7 +19,7 @@ class InterviewManager:
         self.config = config
         self.profile_path = config.profile_path
 
-    _QUESTIONS = [
+    _QUESTIONS: ClassVar[list[tuple[str, str]]] = [
         (
             "goal",
             "Какова цель базы знаний? (работа, учеба, саморазвитие, хобби)",

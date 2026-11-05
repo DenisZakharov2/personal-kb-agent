@@ -62,7 +62,7 @@
 git clone https://github.com/DenisZakharov2/personal-kb-agent.git
 cd personal-kb-agent
 
-# Установите зависимости
+# Установите зависимости (включая yt-dlp для YouTube)
 pip install -e .
 
 # Проверьте установку
@@ -288,7 +288,7 @@ export KB_REDACT_SOURCES="tg_private_chan,yt_internal_channel"
 
 - **Нет confirm-инструмента в MCP.** Модель не может подтвердить изменение
   самостоятельно. Подтверждение человека — только через отдельный CLI-канал:
-  `kb-agent changes confirm <id>` (или `kb-agent confirm <id> --revision N`).
+  `kb-agent confirm <id>` (или `kb-agent confirm <id> --revision N`).
 - **Write-инструменты MCP** (`kb_add_source`, `kb_remove_source`,
   `kb_enable_source`, `kb_update_profile`, `kb_revert_prompt`) создают
   pending-предложение, но не применяют его. Применение требует человеческого

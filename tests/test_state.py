@@ -223,7 +223,7 @@ class TestPromptSeedingFromResources:
 
         monkeypatch.setattr(state, "save_prompt", tracking_save)
 
-        result = prompts_mod.ensure_prompt_seeded(config, state)
+        prompts_mod.ensure_prompt_seeded(config, state)
 
         # Должны быть вызваны save_prompt для всех трёх промптов
         assert len(calls) == 3, f"Ожидалось 3 вызова save_prompt, получено {len(calls)}"

@@ -39,6 +39,7 @@ dependencies = [
     "PyYAML>=6.0,<7",
     "beautifulsoup4>=4.12,<5",
     "mcp>=1.0,<2",
+    "yt-dlp>=2024.08",
 ]
 
 [project.urls]
@@ -47,7 +48,6 @@ Repository = "https://github.com/DenisZakharov2/personal-kb-agent"
 Issues = "https://github.com/DenisZakharov2/personal-kb-agent/issues"
 
 [project.optional-dependencies]
-youtube = ["yt-dlp>=2024.08"]
 dev = [
     "pytest>=8,<9",
     "ruff>=0.8,<1",

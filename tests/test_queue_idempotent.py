@@ -119,7 +119,7 @@ class TestPipelineIdempotentRetry:
                 (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat(),
             ),
         )
-        qid = conn.execute(
+        conn.execute(
             "SELECT id FROM raw_queue WHERE external_id = ?", ("yt_vid_reuse",)
         ).fetchone()["id"]
         conn.commit()

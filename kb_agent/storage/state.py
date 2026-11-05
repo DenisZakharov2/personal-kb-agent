@@ -12,7 +12,8 @@ import sqlite3
 from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Union
+
+from typing_extensions import Self
 
 from kb_agent.utils.logger import setup_logger
 
@@ -73,7 +74,7 @@ def _migrate_feedback_allow_zero(conn: sqlite3.Connection) -> None:
     logger.info("Миграция feedback: разрешён score = 0")
 
 
-SchemaStep = Union[str, Callable[[sqlite3.Connection], None]]
+SchemaStep = str | Callable[[sqlite3.Connection], None]
 
 _SCHEMA = [
     (
@@ -384,7 +385,7 @@ class StateManager:
             self._conn.close()
             self._conn = None
 
-    def __enter__(self) -> StateManager:
+    def __enter__(self) -> Self:
         self.connect()
         return self
 

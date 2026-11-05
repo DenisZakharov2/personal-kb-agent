@@ -312,10 +312,7 @@ class VaultManager:
             key = stripped[:colon_pos]
             value = stripped[colon_pos + 2:]
             if value and value[0] not in ('"', "'") and (
-                value.startswith("@")
-                or ": " in value
-                or value.startswith(("- ", "#", "*", "[", "{"))
-                or value.lower() in ("true", "false", "null", "~")
+                value.startswith(("@", "- ", "#", "*", "[", "{")) or ": " in value or value.lower() in ("true", "false", "null", "~")
             ):
                 indent = line[: len(line) - len(line.lstrip())]
                 value_escaped = "'" + value.replace("'", "''") + "'"

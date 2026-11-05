@@ -45,5 +45,8 @@ jobs:
       - name: Dependency audit (pip-audit)
         run: pip-audit
 
+      - name: Check uv lock
+        run: uv lock --check
+
       - name: Build wheel
         run: pip wheel . --no-deps --no-build-isolation

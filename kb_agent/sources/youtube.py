@@ -48,7 +48,7 @@ def _fetch_channel_videos(channel_url: str, max_videos: int | None = None) -> li
         channel_url.rstrip("/") + "/videos",
     ]
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        result = subprocess.run(cmd, check=False, capture_output=True, text=True, timeout=300)
     except subprocess.TimeoutExpired:
         raise RuntimeError(f"yt-dlp timeout для {channel_url}")
     if result.returncode != 0:
@@ -139,7 +139,7 @@ def _download_subs(
         video_url,
     ]
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        result = subprocess.run(cmd, check=False, capture_output=True, text=True, timeout=120)
     except subprocess.TimeoutExpired:
         logger.warning("  %s | таймаут при скачивании %s субтитров (%s)", video_id, kind, lang)
         return None

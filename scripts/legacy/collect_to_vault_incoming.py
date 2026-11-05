@@ -36,7 +36,7 @@ HEADERS = {
 def load_processed():
     if STATE_FILE.exists():
         with open(STATE_FILE, "r", encoding="utf-8") as f:
-            return set(line.strip() for line in f if line.strip())
+            return {line.strip() for line in f if line.strip()}
     return set()
 
 
@@ -152,7 +152,7 @@ def main():
                 if post_key in processed:
                     continue
 
-                filepath, content = save_raw_post(channel, message_id, date, link, text)
+                filepath, _content = save_raw_post(channel, message_id, date, link, text)
                 append_pending(channel, message_id, date, link, text)
                 processed.add(post_key)
                 new_posts.append({

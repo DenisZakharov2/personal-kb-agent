@@ -49,14 +49,14 @@ class TestDoctor:
         kinds = {issue["kind"] for issue in data["issues"]}
         assert "orphan_file" in kinds, data
         assert "fts_without_file" in kinds, data
-        ghost = [i for i in data["issues"] if i["kind"] == "fts_without_file"][0]
+        ghost = next(i for i in data["issues"] if i["kind"] == "fts_without_file")
         assert ghost["note_id"] == "fts-ghost"
 
     def test_detects_stuck_processing_and_failed_without_retry(
         self, config, state, monkeypatch
     ):
         """Зависшие processing и failed без next_retry_at находятся."""
-        now = datetime.now(timezone.utc).isoformat()
+        datetime.now(timezone.utc).isoformat()
         past = (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat()
         conn = state.connect()
         conn.execute(
