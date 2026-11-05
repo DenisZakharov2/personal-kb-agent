@@ -53,20 +53,22 @@ def fetch_channel_posts(channel: str, limit: int) -> list[dict]:
     try:
         r = requests.get(url, headers=HEADERS, timeout=20)
         if r.status_code != 200:
-            logger.warning("Не удалось открыть %s (статус %s)", channel, r.status_code)
-            return []
+            raise RuntimeError(f"Не удалось открыть {channel} (статус {r.status_code})")
     except Exception as e:
-        logger.warning("Ошибка при запросе %s: %s", channel, e)
-        return []
+        raise RuntimeError(f"Ошибка при запросе {channel}: {e}")
 
     soup = BeautifulSoup(r.text, "html.parser")
-    messages = soup.select(".tgme_widget_message")[:limit]
+    # Сообщения на странице идут от старых к новым — берём последние limit
+    messages = soup.select(".tgme_widget_message")
+    if limit > 0:
+        messages = messages[-limit:]
 
     posts: list[dict] = []
     for msg in messages:
         text_el = msg.select_one(".tgme_widget_message_text")
         text = _clean_html(str(text_el)) if text_el else ""
-        if not text:
+        # Пропускаем посты без текста (только медиа)
+        if not text.strip():
             continue
 
         time_el = msg.select_one("time")

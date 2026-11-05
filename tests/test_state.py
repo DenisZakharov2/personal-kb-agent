@@ -215,7 +215,7 @@ class TestPromptSeedingFromResources:
         # Мокаем get_prompt_text в модуле config (откуда импортируется в prompts)
         monkeypatch.setattr(
             "kb_agent.config.get_prompt_text",
-            lambda name: "# Тестовый промпт из ресурсов\nСодержимое для проверки.",
+            lambda name, config=None: "# Тестовый промпт из ресурсов\nСодержимое для проверки.",
         )
         # Мокаем save_prompt, чтобы отслеживать вызовы
         calls = []

@@ -171,6 +171,18 @@ class PendingManager:
                     "Pending-запрос %s уже в статусе %s", change_id, change["status"]
                 )
                 return False
+            # Проверка TTL (expires_at)
+            if change.get("expires_at"):
+                expires_at = change["expires_at"]
+                if expires_at <= datetime.now(timezone.utc).isoformat():
+                    conn.rollback()
+                    conn.execute(
+                        "UPDATE pending_changes SET status = 'expired', updated_at = ? WHERE change_id = ?",
+                        (datetime.now(timezone.utc).isoformat(), change_id),
+                    )
+                    conn.commit()
+                    logger.warning("Pending-запрос %s истёк (TTL)", change_id)
+                    return False
             if change["revision"] != revision:
                 conn.rollback()
                 logger.warning(

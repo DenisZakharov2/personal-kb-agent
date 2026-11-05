@@ -35,11 +35,21 @@ def agent_prompt_path(config: AppConfig) -> Path:
     return Path(config.prompts_dir) / "agent_prompt.md"
 
 
+def summarize_prompt_path(config: AppConfig) -> Path:
+    """Путь к файлу промпта суммаризации."""
+    return Path(config.prompts_dir) / "summarize_prompt.md"
+
+
+def answer_prompt_path(config: AppConfig) -> Path:
+    """Путь к файлу промпта ответов на вопросы."""
+    return Path(config.prompts_dir) / "answer_prompt.md"
+
+
 # Тип задачи для каждого промпта: определяет, для каких генераций он используется.
 PROMPT_TYPES = {
     DEFAULT_PROMPT_NAME: "search",      # ответы на вопросы (kb ask / kb_search)
     SUMMARIZE_PROMPT_NAME: "summarize", # суммаризация сырого материала в заметку
-    ANSWER_PROMPT_NAME: "search",       # ответы на вопросы (альтернативное имя)
+    ANSWER_PROMPT_NAME: "answer",       # ответы на вопросы (альтернативное имя)
 }
 
 
@@ -47,32 +57,59 @@ def ensure_prompt_seeded(config: AppConfig, state: StateManager) -> Optional[dic
     """Импортирует базовые версии промптов в prompt_history (однократно).
 
     Просеиваются ``agent_prompt``, ``summarize_prompt`` и ``answer_prompt`` из
-    одного исходного файла, чтобы у каждой области был свой активный промпт.
-    Каждому промпту присваивается ``prompt_type`` (search/summarize/insights),
+    соответствующих файлов, чтобы у каждой области был свой активный промпт.
+    Каждому промпту присваивается ``prompt_type`` (search/summarize/answer),
     чтобы активную версию можно было выбирать по задаче.
     Возвращает последнюю созданную запись или None, если активные версии уже есть.
     """
-    # Базовое содержимое берём из упакованных ресурсов через importlib.resources
-    # (работает в установленном wheel), с fallback на файл config/prompts
-    # при разработке из исходников.
     from kb_agent.config import get_prompt_text
 
-    base_text = get_prompt_text("agent_prompt.md")
     seeded: Optional[dict] = None
-    for prompt_name in _ALL_PROMPT_NAMES:
-        result = state.seed_prompt_from_text(
-            prompt_name,
-            base_text or "",
-            prompt_type=PROMPT_TYPES.get(prompt_name, "search"),
+    # agent_prompt (search)
+    base_text = get_prompt_text("agent_prompt.md", config)
+    result = state.seed_prompt_from_text(
+        DEFAULT_PROMPT_NAME,
+        base_text or "",
+        prompt_type=PROMPT_TYPES[DEFAULT_PROMPT_NAME],
+    )
+    if result:
+        seeded = result
+        logger.info(
+            "Промпт %s (тип %s): активна версия %s",
+            DEFAULT_PROMPT_NAME,
+            PROMPT_TYPES[DEFAULT_PROMPT_NAME],
+            result.get("version"),
         )
-        if result:
-            seeded = result
-            logger.info(
-                "Промпт %s (тип %s): активна версия %s",
-                prompt_name,
-                PROMPT_TYPES.get(prompt_name, "search"),
-                result.get("version"),
-            )
+    # summarize_prompt
+    base_text = get_prompt_text("summarize_prompt.md", config)
+    result = state.seed_prompt_from_text(
+        SUMMARIZE_PROMPT_NAME,
+        base_text or "",
+        prompt_type=PROMPT_TYPES[SUMMARIZE_PROMPT_NAME],
+    )
+    if result:
+        seeded = result
+        logger.info(
+            "Промпт %s (тип %s): активна версия %s",
+            SUMMARIZE_PROMPT_NAME,
+            PROMPT_TYPES[SUMMARIZE_PROMPT_NAME],
+            result.get("version"),
+        )
+    # answer_prompt
+    base_text = get_prompt_text("answer_prompt.md", config)
+    result = state.seed_prompt_from_text(
+        ANSWER_PROMPT_NAME,
+        base_text or "",
+        prompt_type=PROMPT_TYPES[ANSWER_PROMPT_NAME],
+    )
+    if result:
+        seeded = result
+        logger.info(
+            "Промпт %s (тип %s): активна версия %s",
+            ANSWER_PROMPT_NAME,
+            PROMPT_TYPES[ANSWER_PROMPT_NAME],
+            result.get("version"),
+        )
     return seeded
 
 

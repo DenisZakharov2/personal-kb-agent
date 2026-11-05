@@ -148,10 +148,8 @@ class VaultManager:
         lines.append(content)
         lines.append("")
 
-        # Атомарная запись через временный файл
-        tmp_path = file_path.with_suffix(".md.tmp")
-        tmp_path.write_text("\n".join(lines), encoding="utf-8")
-        tmp_path.replace(file_path)
+        # Атомарная запись через atomic_write_text (utf-8, backup)
+        atomic_write_text(file_path, "\n".join(lines), backup=True)
 
         logger.info("Запись заметки: %s", file_path)
         return file_path
@@ -239,9 +237,7 @@ class VaultManager:
         new_fm = (
             yaml.safe_dump(loaded, allow_unicode=True, sort_keys=False, default_flow_style=False).strip()
         )
-        path.write_text(
-            "---\n" + new_fm + "\n---\n" + body, encoding="utf-8"
-        )
+        atomic_write_text(path, "---\n" + new_fm + "\n---\n" + body, backup=False)
 
     def restore_note(self, note_id: str, topic: Optional[str] = None) -> Optional[Path]:
         """Возвращает файл заметки из архива в тематическую папку.
@@ -283,9 +279,7 @@ class VaultManager:
             return
         loaded["archived"] = archived
         new_fm = yaml.safe_dump(loaded, allow_unicode=True, sort_keys=False, default_flow_style=False).strip()
-        path.write_text(
-            "---\n" + new_fm + "\n---\n" + body, encoding="utf-8"
-        )
+        atomic_write_text(path, "---\n" + new_fm + "\n---\n" + body, backup=False)
 
     def list_notes(self, topic: Optional[str] = None) -> list[Path]:
         """Возвращает список всех .md заметок, опционально по теме."""

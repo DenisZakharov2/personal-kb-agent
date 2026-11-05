@@ -193,9 +193,11 @@ class SearchEngine:
             rank = row.get("rank")
             if isinstance(rank, (int, float)):
                 best_rank = rank if best_rank is None else min(best_rank, rank)
-            # FTS5 rank: чем меньше, тем лучше. Переводим в score 0.0-1.0,
-            # где лучше ранга выше score. Лучший результат в выдаче -> ~1.0.
-            score = max(0.0, min(1.0, 1.0 + (rank or 0.0)))
+            # FTS5 rank (bm25): чем меньше (отрицательнее), тем выше релевантность.
+            # Переводим в score 0.0-1.0: score = |rank| / (1 + |rank|).
+            # Это монотонно возрастающая функция от |rank|, сохраняющая порядок.
+            raw_rank = abs(float(rank)) if isinstance(rank, (int, float)) else 0.0
+            score = round(raw_rank / (1.0 + raw_rank), 4) if raw_rank > 0 else 0.0
             content = row.get("content", "") or ""
             snippet, snippet_offset = _make_snippet(content, query_terms)
             results.append(

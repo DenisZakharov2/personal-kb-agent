@@ -38,21 +38,22 @@ def _ensure_yt_dlp() -> None:
         )
 
 
-def _fetch_channel_videos(channel_url: str) -> list[dict]:
+def _fetch_channel_videos(channel_url: str, max_videos: Optional[int] = None) -> list[dict]:
     """Скачивает метаданные видео канала через yt-dlp (без Shorts, без загрузки видео)."""
+    # Ограничиваем количество видео через --playlist-end для производительности
+    playlist_end = max_videos * 3 if max_videos and max_videos > 0 else 30
     cmd = [
         "yt-dlp", "--skip-download", "--print-json",
         "--match-filter", "!is_short & duration > 60",
-        channel_url + "/videos",
+        "--playlist-end", str(playlist_end),
+        channel_url.rstrip("/") + "/videos",
     ]
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
     except subprocess.TimeoutExpired:
-        logger.error("yt-dlp timeout для %s", channel_url)
-        return []
+        raise RuntimeError(f"yt-dlp timeout для {channel_url}")
     if result.returncode != 0:
-        logger.error("yt-dlp error: %s", result.stderr)
-        return []
+        raise RuntimeError(f"yt-dlp error: {result.stderr[:500]}")
     videos: list[dict] = []
     for line in result.stdout.splitlines():
         line = line.strip()
@@ -216,7 +217,7 @@ def collect_youtube_source(
     sub_langs — языки субтитров через запятую.
     limit — максимум видео за запуск.
     """
-    langs = [l.strip() for l in sub_langs.split(",") if l.strip()] or [DEFAULT_SUB_LANGS]
+    langs = [l.strip() for l in sub_langs.split(",") if l.strip()] or DEFAULT_SUB_LANGS.split(",")
     _ensure_yt_dlp()
     return _collect_one_channel(state, channel_url, langs, months, limit, source_id=source_id)
 
@@ -235,7 +236,7 @@ def _collect_one_channel(
         source_id = f"yt_{channel_name.replace('@', '')}"
 
     logger.info("Канал YouTube: %s", channel_url)
-    videos = _fetch_channel_videos(channel_url)
+    videos = _fetch_channel_videos(channel_url, max_videos=limit)
     logger.info("  Найдено видео (без Shorts): %s", len(videos))
     videos = _filter_by_date(videos, months)
     logger.info("  После фильтра даты: %s", len(videos))
@@ -257,10 +258,6 @@ def _collect_one_channel(
         title = v.get("title", "Без названия") or "Без названия"
         raw_text = v.get("description", "") or ""
 
-        raw_hash = hashlib.sha256(
-            (title + raw_text).encode("utf-8")
-        ).hexdigest()
-
         # Проверка на déjà vu (по external_id) ДО скачивания субтитров
         if state.is_processed(external_id):
             skipped_for_channel += 1
@@ -273,6 +270,11 @@ def _collect_one_channel(
             subs_for_channel += 1
         else:
             logger.info("  %s | нет субтитров", vid)
+
+        # raw_hash считается ПОСЛЕ добавления транскрипции
+        raw_hash = hashlib.sha256(
+            (title + raw_text).encode("utf-8")
+        ).hexdigest()
 
         queue_id = state.enqueue(
             source_id=source_id,
@@ -287,8 +289,7 @@ def _collect_one_channel(
             skipped_for_channel += 1
             continue
 
-        # Помечаем как обработанный, чтобы при следующем запуске не качать снова
-        state.mark_processed_key(external_id)
+        # mark_processed_key будет вызван в pipeline ПОСЛЕ успешного создания заметки
         new_for_channel += 1
 
         # Пауза между запросами, чтобы не заблокировали

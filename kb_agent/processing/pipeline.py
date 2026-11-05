@@ -274,6 +274,7 @@ class Pipeline:
                 tags = summary.tags
                 topic = summary.topic
                 content = summary.content
+                final_title = summary.title or item["title"] or "Без названия"
 
                 # Запись в vault: существующий файл с таким note_id
                 # перезаписывается на месте (без дублей файлов).
@@ -285,7 +286,7 @@ class Pipeline:
                     canonical_url=item["canonical_url"] or "",
                     published_at=item["published_at"] if item["published_at"] else None,
                     received_at=item["received_at"],
-                    title=summary.title or item["title"] or "Без названия",
+                    title=final_title,
                     tags=",".join(tags),
                     topic=topic,
                     content=content,
@@ -317,7 +318,7 @@ class Pipeline:
                 self.state.remove_from_index(note_id)
                 self.state.index_note(
                     note_id=note_id,
-                    title=item["title"] or "Без названия",
+                    title=final_title,
                     tags=",".join(tags),
                     topic=topic,
                     content=content,
@@ -344,6 +345,8 @@ class Pipeline:
                 self._link_related_notes(note_id, tags)
 
                 self.state.mark_processed(queue_id)
+                # Помечаем external_id как обработанный для дедупликации YouTube
+                self.state.mark_processed_key(item["external_id"])
                 if is_update:
                     updated += 1
                 else:
@@ -394,8 +397,11 @@ class Pipeline:
         lines.append("## Обработка очереди")
         lines.append(f"- Всего обработано: {processing['processed']}")
         lines.append(f"- Создано заметок: {processing['created']}")
-        lines.append(f"- Пропущено (relevance): {processing.get('relevance_skipped', 0)}")
-        lines.append(f"- Пропущено (другое): {processing['skipped']}")
+        lines.append(f"- Обновлено заметок: {processing.get('updated', 0)}")
+        relevance_skipped = processing.get('relevance_skipped', 0)
+        other_skipped = processing['skipped'] - relevance_skipped
+        lines.append(f"- Пропущено (relevance): {relevance_skipped}")
+        lines.append(f"- Пропущено (другое): {max(0, other_skipped)}")
         lines.append(f"- Ошибок: {processing['failed']}")
         lines.append("")
 

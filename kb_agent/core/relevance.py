@@ -19,9 +19,24 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-_WORD_RE = re.compile(r"[а-яёa-z0-9]+", re.IGNORECASE)
+_WORD_RE = re.compile(r"[а-яёa-z0-9]{2,}", re.IGNORECASE)
+
+# Русские и английские стоп-слова (союзы, предлоги, частицы)
+STOP_WORDS = {
+    "и", "в", "во", "на", "с", "со", "к", "ко", "по", "из", "за", "от", "до",
+    "для", "про", "или", "но", "не", "ни", "что", "как", "это", "все",
+    "and", "or", "the", "in", "on", "to", "for", "of", "with", "a", "an",
+    "is", "are", "was", "were", "be", "been", "have", "has", "had", "do",
+    "does", "did", "will", "would", "could", "should", "may", "might", "must",
+}
 
 DEFAULT_THRESHOLD = 0.3
+
+# Спам-паттерны с границами слов
+SPAM_PATTERNS = re.compile(
+    r"\b(?:розыгрыш\w*|giveaway|промокод\w*|бесплатный\s+розыгрыш|подпишись\s+на\s+канал)\b",
+    re.IGNORECASE,
+)
 
 
 @dataclass
@@ -62,8 +77,12 @@ class RelevanceGate:
 
     @staticmethod
     def _tokens(text: str) -> set[str]:
-        """Нормализует текст во множество токенов (слова/цифры, без пунктуации)."""
-        return set(_WORD_RE.findall(text or ""))
+        """Нормализует текст во множество токенов (слова/цифры, без пунктуации).
+        
+        Исключает стоп-слова (союзы, предлоги) и слишком короткие токены.
+        """
+        tokens = _WORD_RE.findall(text or "")
+        return {t for t in tokens if t not in STOP_WORDS}
 
     @staticmethod
     def _coverage(query_tokens: set[str], text_tokens: set[str]) -> float:
@@ -101,32 +120,13 @@ class RelevanceGate:
         text = (title + " " + raw_text).lower()
         text_tokens = self._tokens(text)
 
-        # 1. Спам-ключевые слова — всегда пропускаем
-        spam_keywords = [
-            "розыгрыш",
-            "giveaway",
-            "подпишись на канал",
-            "подписаться на",
-            "реклама",
-            "вложения",
-            "заработай",
-            "инвестируй",
-            "купи",
-            "промокод",
-            "скидка",
-            "розыгрыш приза",
-            "бесплатный розыгрыш",
-            "скидка до",
-            "распродажа",
-            "купон",
-        ]
-        for kw in spam_keywords:
-            if kw in text:
-                return RelevanceResult(
-                    relevant=False,
-                    reason=f"спам: '{kw}'",
-                    score=0.0,
-                )
+        # 1. Спам-паттерны — всегда пропускаем (проверка по границам слов)
+        if SPAM_PATTERNS.search(text):
+            return RelevanceResult(
+                relevant=False,
+                reason="спам: обнаружен спам-паттерн",
+                score=0.0,
+            )
 
         # 2. Если профиль не задан — считаем релевантным
         if not self.topics and not self.goal and not self.tasks:

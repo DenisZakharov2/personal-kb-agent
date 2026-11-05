@@ -69,9 +69,19 @@ def _read_env_file(path: Path) -> dict[str, str]:
 def _resource_path(package: str, resource_name: str) -> Optional[Path]:
     """Возвращает путь к упакованному ресурсу через importlib.resources."""
     try:
-        with importlib_resources.files(package).joinpath(resource_name) as ref:
-            return Path(ref)
-    except (FileNotFoundError, ModuleNotFoundError, ImportError, TypeError):
+        # importlib.resources.files().joinpath() возвращает Traversable,
+        # используем as_file() для получения пути к файлу (работает и для wheel).
+        traversable = importlib_resources.files(package).joinpath(resource_name)
+        # В Python 3.11+ используем as_file(), в 3.10+ есть context manager
+        try:
+            with importlib_resources.as_file(traversable) as file_path:
+                return Path(file_path)
+        except AttributeError:
+            # Fallback для старых версий - если это обычный файл
+            if hasattr(traversable, '__fspath__'):
+                return Path(traversable.__fspath__())
+            return None
+    except (FileNotFoundError, ModuleNotFoundError, ImportError, TypeError, OSError):
         return None
 
 
@@ -201,21 +211,21 @@ class AppConfig(BaseModel):
 def load_config(env_file: Optional[str] = None) -> AppConfig:
     """Загружает конфигурацию.
 
-    Приоритет: переменные окружения > файл .env > значения по умолчанию.
+    Приоритет: переменные окружения > файл .env (явный) > стандартный .env > значения по умолчанию.
 
     Производные пути (db, sources, profile, log, vault) вычисляются
     относительно итогового data_dir, если не заданы явно.
     """
     env_vars: dict[str, str] = {}
 
-    # 1. Сначала читаем .env файл (если указан)
-    if env_file:
-        env_vars.update(_read_env_file(Path(env_file)))
-
-    # 2. Также пробуем стандартный .env в корне проекта
+    # 1. Сначала читаем стандартный .env в корне проекта (базовый слой)
     default_env = PROJECT_ROOT / ".env"
     if default_env.exists():
         env_vars.update(_read_env_file(default_env))
+
+    # 2. Затем читаем явный env_file, который перекрывает стандартный
+    if env_file:
+        env_vars.update(_read_env_file(Path(env_file)))
 
     # 3. Переменные окружения имеют наивысший приоритет
     env_mapping = {
@@ -273,17 +283,29 @@ def get_prompt_path(prompt_name: str) -> Optional[Path]:
     return None
 
 
-def get_prompt_text(prompt_name: str) -> Optional[str]:
-    """Читает содержимое промпта из упакованных ресурсов.
+def get_prompt_text(prompt_name: str, config: Optional[AppConfig] = None) -> Optional[str]:
+    """Читает содержимое промпта.
 
-    Сначала пробует importlib.resources (работает в установленном wheel),
-    затем fallback на чтение файла (режим разработки).
+    Приоритет:
+    1. Пользовательский файл в config.prompts_dir (если передан config)
+    2. Упакованный ресурс kb_agent.resources (работает в установленном wheel)
+    3. Файл в config/prompts (режим разработки из исходников)
     """
-    # Сначала пробуем упакованный ресурс
+    # 1. Пользовательский файл из config.prompts_dir
+    if config is not None:
+        user_path = config.prompts_dir / prompt_name
+        if user_path.exists():
+            try:
+                return user_path.read_text(encoding="utf-8")
+            except OSError:
+                pass
+
+    # 2. Упакованный ресурс (wheel)
     text = read_resource_text(RESOURCES_PACKAGE, f"prompts/{prompt_name}")
     if text is not None:
         return text
-    # Fallback для разработки из исходников
+
+    # 3. Fallback для разработки из исходников
     path = get_prompt_path(prompt_name)
     if path is not None:
         try:

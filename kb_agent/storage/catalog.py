@@ -93,6 +93,7 @@ class CatalogGenerator:
             note_path
             for note_path in self.vault.list_notes()
             if note_path.name not in generated_files
+            and "Архив" not in note_path.parts  # исключаем архивные заметки
         ]
 
         # Группируем по темам
@@ -100,12 +101,14 @@ class CatalogGenerator:
         for note_path in notes:
             content = note_path.read_text(encoding="utf-8")
             fm = self._parse_frontmatter(content, note_path)
-            topic = fm.get("topic", "Общее")
-            title = fm.get("title", note_path.stem)
+            topic = str(fm.get("topic") or "Общее")
+            title = str(fm.get("title") or note_path.stem)
             date = fm.get("date_saved", "")
             # Приводим дату к строке (YAML может распарсить как date объект)
             if hasattr(date, "isoformat"):
                 date = date.isoformat()
+            elif date is None:
+                date = ""
             by_topic.setdefault(topic, []).append((date, title, str(note_path.relative_to(vault_path))))
 
         lines: list[str] = []
