@@ -27,8 +27,9 @@ def _migrate_feedback_allow_zero(conn: sqlite3.Connection) -> None:
     """Разрешает score = 0 (сообщения обратной связи без оценки).
 
     Миграция идемпотентна: если таблица уже допускает 0, ничего не делает.
-    Выполняется в одной транзакции, поэтому падение не оставляет БД
-    в состоянии «feedback удалён, feedback_v2 не переименован».
+    Выполняется в одной транзакции (BEGIN IMMEDIATE ... COMMIT), поэтому
+    падение не оставляет БД в полумигрированном состоянии. Остатки
+    feedback_v2 от предыдущего неудачного запуска удаляются перед началом.
     """
     row = conn.execute(
         "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'feedback'"
@@ -36,12 +37,15 @@ def _migrate_feedback_allow_zero(conn: sqlite3.Connection) -> None:
     if row and "BETWEEN 0 AND 5" in (row["sql"] or ""):
         return
 
-    conn.commit()
     conn.execute("BEGIN IMMEDIATE")
     try:
+        # Удаляем остатки feedback_v2 от предыдущего неудачного запуска,
+        # чтобы начать миграцию с чистого листа.
+        conn.execute("DROP TABLE IF EXISTS feedback_v2")
+
         conn.execute(
             """
-            CREATE TABLE IF NOT EXISTS feedback_v2 (
+            CREATE TABLE feedback_v2 (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 note_id TEXT NOT NULL,
                 score INTEGER NOT NULL CHECK (score BETWEEN 0 AND 5),
