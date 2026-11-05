@@ -161,6 +161,9 @@ class SearchEngine:
         date_from: Optional[str] = None,
         date_to: Optional[str] = None,
         include_archived: bool = False,
+        include_private: bool = True,
+        offset: int = 0,
+        generate_answer: bool = True,
     ) -> SearchResponse:
         """Ищет заметки по запросу с фильтрами и возвращает релевантные результаты.
 
@@ -180,6 +183,8 @@ class SearchEngine:
             date_from=date_from,
             date_to=date_to,
             include_archived=include_archived,
+            include_private=include_private,
+            offset=offset,
         )
         query_terms = _WORD_RE.findall(query or "")
         results: list[SearchResult] = []
@@ -219,6 +224,11 @@ class SearchEngine:
         if not results:
             response.enough_data = False
             response.answer = "В базе недостаточно данных по вашему запросу."
+            return response
+
+        if not generate_answer:
+            response.enough_data = True
+            response.answer = None
             return response
 
         # Формируем контекст для LLM из топ-N заметок (релевантный фрагмент,

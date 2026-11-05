@@ -160,9 +160,14 @@ class NoteOutput(BaseModel):
 class InsightOutput(BaseModel):
     statement: str
     link_type: str
-    confidence: float
+    confidence: str  # high / medium / low
     evidence_note_ids: list[str]
     benefit: str
+
+
+class InsightsListOutput(BaseModel):
+    """Обертка для списка инсайтов в outputSchema kb_get_insights."""
+    insights: list[InsightOutput]
 
 
 class ErrorOutput(BaseModel):
@@ -263,7 +268,7 @@ _LIST_TOOLS: list[Tool] = [
         "kb_get_insights",
         "Получение инсайтов базы знаний (связи, повторяющиеся темы).",
         {"type": "object", "properties": {}, "additionalProperties": False},
-        InsightOutput.model_json_schema(),
+        InsightsListOutput.model_json_schema(),
     ),
     _read_only_tool(
         "kb_sources_status",
@@ -428,10 +433,22 @@ async def handle_call_tool(name: str, arguments: Optional[dict[str, Any]]) -> An
             cursor = max(0, cursor)
 
             engine = SearchEngine(config, state, llm)
-            response = engine.search(query, limit=limit)
+            # Запрашиваем limit+1, чтобы знать, есть ли следующая страница.
+            # include_private=False — не выдавать приватные заметки внешнему агенту (6.2).
+            # generate_answer=False — не тратить токены на LLM-ответ, внешний агент сам LLM.
+            response = engine.search(
+                query,
+                limit=limit + 1,
+                offset=cursor,
+                include_private=False,
+                generate_answer=False,
+            )
 
             items: list[SearchItem] = []
-            for r in response.results[cursor : cursor + limit]:
+            # Определяем, есть ли следующая страница (если получили limit+1 записей).
+            has_more = len(response.results) > limit
+            # Берём только запрошенное количество.
+            for r in response.results[:limit]:
                 prov_parts = []
                 if r.source_id:
                     prov_parts.append(f"источник={r.source_id}")
@@ -445,7 +462,9 @@ async def handle_call_tool(name: str, arguments: Optional[dict[str, Any]]) -> An
                     prov_parts.append(f"rev={r.revision}")
                 if r.content_hash:
                     prov_parts.append(f"hash={r.content_hash[:12]}")
-                prov_text = f" [{', '.join(prov_parts)}]" if prov_parts else ""
+                # untrusted_content: True для внешнего контента (есть canonical_url),
+                # False для локальных заметок пользователя (нет canonical_url).
+                untrusted = bool(r.canonical_url)
                 items.append(
                     SearchItem(
                         note_id=r.note_id,
@@ -459,24 +478,22 @@ async def handle_call_tool(name: str, arguments: Optional[dict[str, Any]]) -> An
                         topic=r.topic or "",
                         tags=[t.strip() for t in (r.tags or "").split(",") if t.strip()],
                         revision=r.revision,
+                        content_hash=r.content_hash,
                         # Метаданные происхождения (6.1)
-                        untrusted_content=not _is_url_allowed(
-                            r.canonical_url or ""
-                        )
-                        if r.canonical_url
-                        else True,
-                        # Метка чувствительности (6.2)
-                        is_private=bool(r.is_private),
-                        sensitivity=r.sensitivity,
+                        untrusted_content=untrusted,
+                        # Метка чувствительности (6.2) — уже отфильтровано include_private=False
+                        is_private=False,
+                        sensitivity="public",
                         # Превью содержимого (R-06)
                         content_preview=r.content[:500] if r.content else None,
                     )
                 )
 
-            next_cursor = cursor + len(items) if cursor + len(items) < len(response.results) else None
-            search_output = SearchOutput(items=items, next_cursor=next_cursor, total=len(response.results))
+            next_cursor = cursor + limit if has_more else None
+            # total — приблизительное, т.к. мы не делаем COUNT(*) для производительности.
+            search_output = SearchOutput(items=items, next_cursor=next_cursor, total=cursor + len(items) + (1 if has_more else 0))
 
-            lines = [f"## Результаты поиска: {query}", f"Найдено: {len(response.results)}", ""]
+            lines = [f"## Результаты поиска: {query}", f"Найдено: {len(items)} (показано с {cursor})", ""]
             for it in items:
                 prov_parts = []
                 if it.source_id:
@@ -531,14 +548,12 @@ async def handle_call_tool(name: str, arguments: Optional[dict[str, Any]]) -> An
                 content_hash=note.get("content_hash"),
                 revision=note.get("revision"),
                 # Метаданные происхождения (6.1)
-                untrusted_content=not _is_url_allowed(
-                    note.get("canonical_url") or ""
-                )
-                if note.get("canonical_url")
-                else True,
-                # Метка чувствительности (6.2)
-                is_private=bool(note.get("is_private", 0)),
-                sensitivity="private" if note.get("is_private") else "public",
+                # untrusted_content: True для внешнего контента (есть canonical_url),
+                # False для локальных заметок пользователя (нет canonical_url).
+                untrusted_content=bool(note.get("canonical_url")),
+                # Метка чувствительности (6.2) — приватные уже отфильтрованы выше
+                is_private=False,
+                sensitivity="public",
             )
             lines = [
                 f"## Заметка: {note_output.title}",

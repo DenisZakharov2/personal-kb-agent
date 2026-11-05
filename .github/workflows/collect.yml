@@ -15,6 +15,7 @@ jobs:
     timeout-minutes: 60
     permissions:
       contents: read
+      actions: read  # для скачивания предыдущего артефакта
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
 
@@ -28,6 +29,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install ".[youtube]"
 
+      - name: Restore previous state (state.db + vault)
+        uses: actions/download-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        if: always()
+        with:
+          name: kb-state
+          path: ${{ runner.temp }}/kb-restore
+        continue-on-error: true
+
       - name: Configure environment
         run: |
           # Все данные конвейера складываем во временную рабочую директорию раннера,
@@ -38,11 +47,29 @@ jobs:
           echo "KB_LOG_PATH=${{ runner.temp }}/kb-data/kb_agent.log" >> $GITHUB_ENV
           # Секреты из GitHub Secrets пробрасываем в окружение приложения через $GITHUB_ENV
           # (load_config читает переменные окружения, поэтому .env-файл не нужен).
-          if [ "${{ secrets.KB_VAULT_PATH }}" != "" ]; then
-            echo "KB_VAULT_PATH=${{ secrets.KB_VAULT_PATH }}" >> $GITHUB_ENV
-          fi
+          # НЕ переопределяем KB_VAULT_PATH из секрета на эфемерном раннере — используем локальный путь.
           echo "KB_TELEGRAM_CHANNELS=${{ secrets.KB_TELEGRAM_CHANNELS }}" >> $GITHUB_ENV
           echo "KB_YOUTUBE_CHANNELS=${{ secrets.KB_YOUTUBE_CHANNELS }}" >> $GITHUB_ENV
+          echo "KB_OPENAI_API_KEY=${{ secrets.KB_OPENAI_API_KEY }}" >> $GITHUB_ENV
+          echo "KB_OPENAI_BASE_URL=${{ secrets.KB_OPENAI_BASE_URL }}" >> $GITHUB_ENV
+          echo "KB_OPENAI_MODEL=${{ secrets.KB_OPENAI_MODEL }}" >> $GITHUB_ENV
+          echo "KB_LLM_PROVIDER=${{ secrets.KB_LLM_PROVIDER }}" >> $GITHUB_ENV
+
+      - name: Restore state.db and vault from previous run
+        if: always()
+        run: |
+          mkdir -p "${{ env.KB_VAULT_PATH }}" "${{ runner.temp }}/kb-data"
+          # Восстанавливаем state.db, если есть
+          if [ -f "${{ runner.temp }}/kb-restore/state.db" ]; then
+            cp "${{ runner.temp }}/kb-restore/state.db" "${{ env.KB_DB_PATH }}"
+            echo "Restored state.db from previous run"
+          fi
+          # Восстанавливаем vault, если есть
+          if [ -d "${{ runner.temp }}/kb-restore" ] && [ "$(ls -A ${{ runner.temp }}/kb-restore)" ]; then
+            # Копируем только .md файлы (vault), не state.db
+            find "${{ runner.temp }}/kb-restore" -name "*.md" -exec cp {} "${{ env.KB_VAULT_PATH }}/" \; 2>/dev/null || true
+            echo "Restored vault from previous run"
+          fi
 
       - name: Run kb-agent pipeline (сбор + суммаризация + индексация)
         run: kb-agent process run

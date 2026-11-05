@@ -1084,6 +1084,8 @@ class StateManager:
         date_from: Optional[str] = None,
         date_to: Optional[str] = None,
         include_archived: bool = False,
+        include_private: bool = True,
+        offset: int = 0,
     ) -> list[dict]:
         conn = self.connect()
         # Ограничиваем размер выдачи: защита от выкачивания всей базы в контекст LLM.
@@ -1126,6 +1128,8 @@ class StateManager:
             params.append(date_to)
         if not include_archived:
             conditions.append("(n.is_archived = 0 OR n.is_archived IS NULL)")
+        if not include_private:
+            conditions.append("(n.is_private = 0 OR n.is_private IS NULL)")
         where_clause = (
             "WHERE notes_fts MATCH ?"
             if not conditions
@@ -1141,9 +1145,9 @@ class StateManager:
                 LEFT JOIN notes n ON n.note_id = f.note_id
                 {where_clause}
                 ORDER BY rank
-                LIMIT ?
+                LIMIT ? OFFSET ?
                 """,
-                (*params, limit),
+                (*params, limit, offset),
             ).fetchall()
         except sqlite3.OperationalError as exc:
             # Некорректный с точки зрения FTS5 запрос не должен ронять CLI/MCP.

@@ -27,7 +27,10 @@ logger = setup_logger("kb_agent.sources.registry")
 # Допустимые типы источников и паттерны их URL (P2-13).
 SOURCE_TYPES = ("telegram", "youtube")
 
-_TELEGRAM_URL_RE = re.compile(r"^https?://(?:www\.)?t\.me/s/[A-Za-z0-9_]+/?$")
+# Поддерживает: https://t.me/s/channel, https://t.me/channel, @channel, channel
+_TELEGRAM_URL_RE = re.compile(
+    r"^(?:https?://(?:www\.)?(?:t\.me|telegram\.me)/(?:s/)?)?@?([A-Za-z0-9_]{4,64})/?$"
+)
 _YOUTUBE_URL_RE = re.compile(
     r"^https?://(?:www\.)?youtube\.com/(?:@[A-Za-z0-9_.]+|c/[A-Za-z0-9_-]+|channel/[A-Za-z0-9_-]+)/?$"
 )
@@ -48,10 +51,16 @@ def normalize_source(
 
     url = url.strip()
     if source_type == "telegram":
-        if not _TELEGRAM_URL_RE.match(url):
+        m = _TELEGRAM_URL_RE.match(url)
+        if not m:
             raise ValueError(
-                f"Неправильный URL Telegram-канала: {url}. Ожидается https://t.me/s/<канал>."
+                f"Неправильный URL Telegram-канала: {url}. "
+                "Ожидается https://t.me/s/<канал>, https://t.me/<канал> или @<канал>."
             )
+        channel_slug = m.group(1)
+        canonical_url = f"https://t.me/s/{channel_slug}"
+        resolved_id = source_id or f"tg_{channel_slug}"
+        return resolved_id, canonical_url, source_type
     else:  # youtube
         if not _YOUTUBE_URL_RE.match(url):
             raise ValueError(
@@ -59,10 +68,10 @@ def normalize_source(
                 f"Ожидается https://youtube.com/@<handle> или https://youtube.com/c/<канал>."
             )
 
-    if not source_id:
-        channel = url.rstrip("/").split("/")[-1].replace("@", "")
-        source_id = f"{'tg' if source_type == 'telegram' else 'yt'}_{channel}"
-    return source_id, url, source_type
+        if not source_id:
+            channel = url.rstrip("/").split("/")[-1].replace("@", "")
+            source_id = f"{'tg' if source_type == 'telegram' else 'yt'}_{channel}"
+        return source_id, url, source_type
 
 
 class SourceRegistry:

@@ -58,14 +58,14 @@ class TestSourceRegistrySqlite:
 
         from kb_agent.sources.base import SourceConfig
 
-        registry1.add(SourceConfig(id="tg_ch1", type="telegram", url="https://t.me/s/ch1", enabled=True))
+        registry1.add(SourceConfig(id="tg_ch123", type="telegram", url="https://t.me/s/ch123", enabled=True))
 
         sources1 = registry1.list()
         sources2 = registry2.list()
 
         assert len(sources1) == 1
         assert len(sources2) == 1
-        assert sources1[0].id == sources2[0].id == "tg_ch1"
+        assert sources1[0].id == sources2[0].id == "tg_ch123"
 
 
 class TestPendingAffectsCollector:

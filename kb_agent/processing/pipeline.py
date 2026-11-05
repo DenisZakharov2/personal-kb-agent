@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import hashlib
+import sqlite3
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -22,7 +23,7 @@ from kb_agent.core.prompts import (
     get_active_system_prompt,
 )
 from kb_agent.core.relevance import RelevanceGate
-from kb_agent.sources.registry import ensure_sources_file
+from kb_agent.sources.registry import SourceRegistry, ensure_sources_file
 from kb_agent.processing.llm_client import LLMClient
 from kb_agent.sources.manager import run_collection
 from kb_agent.storage.catalog import CatalogGenerator
@@ -71,6 +72,19 @@ class Pipeline:
                 "Реестр источников пуст (%s). Добавьте источники: kb-agent sources add ...",
                 sources_path,
             )
+        # Однократный импорт источников из YAML в SQLite при пустой таблице
+        # (на чистой установке или в CI). Это делается только здесь в Pipeline.run(),
+        # а не в SourceRegistry.load(), чтобы не переимпортировать после удаления источников.
+        registry = SourceRegistry(sources_path=sources_path, state=self.state)
+        try:
+            registry.load()
+            if not registry.list() and sources_path.exists():
+                imported = registry.import_from_yaml(sources_path)
+                if imported:
+                    logger.info("Выполнен начальный импорт %s источников из %s", imported, sources_path)
+        except sqlite3.OperationalError as exc:
+            # Таблица sources может не существовать, если init_db был замокнут (тесты)
+            logger.debug("Пропуск импорта источников: %s", exc)
         # Импортируем базовую версию системного промпта в prompt_history,
         # чтобы работали откат промпта и self-improve.
         ensure_prompt_seeded(self.config, self.state)
