@@ -330,6 +330,7 @@ kb-agent feedback tell "Нужно больше примеров кода"
 kb-agent feedback metrics
 
 # Посмотреть предложения по улучшению промптов
+```bash
 kb-agent self-improve
 ```
 
