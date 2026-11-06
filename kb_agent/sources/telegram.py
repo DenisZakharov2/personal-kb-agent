@@ -73,7 +73,6 @@ def fetch_channel_posts(channel: str, limit: int) -> list[dict]:
     if limit > 0:
         messages = messages[-limit:]
     # Если сообщений меньше limit, берём все
-    return messages
 
     posts: list[dict] = []
     for msg in messages:

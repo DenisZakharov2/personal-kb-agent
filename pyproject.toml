@@ -48,7 +48,7 @@ Issues = "https://github.com/DenisZakharov2/personal-kb-agent/issues"
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=8,<9",
+    "pytest>=9.0.3,<10",
     "ruff>=0.8,<1",
     "mypy>=1.10,<2",
     "pip-audit>=2.7,<3",
