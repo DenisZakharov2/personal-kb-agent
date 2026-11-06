@@ -4,7 +4,7 @@ version = "0.2.0"
 description = "Второй мозг — личный ИИ-агент для базы знаний: сбор из Telegram и YouTube, суммаризация, поиск и доступ для AI-агентов через MCP"
 readme = "README.md"
 requires-python = ">=3.10"
-license = {text = "MIT"}
+license = "MIT"
 authors = [{name = "Denis Zakharov", email = "denis@zakharov.dev"}]
 keywords = [
     "ai-agent",
@@ -21,7 +21,6 @@ classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: End Users/Desktop",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",

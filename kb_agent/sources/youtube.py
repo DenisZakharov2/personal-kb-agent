@@ -20,7 +20,7 @@ from kb_agent.utils.logger import setup_logger
 
 logger = setup_logger("kb_agent.sources.youtube")
 
-DEFAULT_SUB_LANGS = "ru,en"
+DEFAULT_SUB_LANGS = ["ru", "en"]
 
 
 def _ensure_yt_dlp() -> None:
@@ -42,9 +42,13 @@ def _fetch_channel_videos(channel_url: str, max_videos: int | None = None) -> li
     # Ограничиваем количество видео через --playlist-end для производительности
     playlist_end = max_videos * 3 if max_videos and max_videos > 0 else 30
     cmd = [
-        "yt-dlp", "--skip-download", "--print-json",
-        "--match-filter", "!is_short & duration > 60",
-        "--playlist-end", str(playlist_end),
+        "yt-dlp",
+        "--skip-download",
+        "--print-json",
+        "--match-filter",
+        "!is_short & duration > 60",
+        "--playlist-end",
+        str(playlist_end),
         channel_url.rstrip("/") + "/videos",
     ]
     try:
@@ -216,7 +220,7 @@ def collect_youtube_source(
     sub_langs — языки субтитров через запятую.
     limit — максимум видео за запуск.
     """
-    langs = [l.strip() for l in sub_langs.split(",") if l.strip()] or DEFAULT_SUB_LANGS.split(",")
+    langs = [l.strip() for l in sub_langs.split(",") if l.strip()] or DEFAULT_SUB_LANGS
     _ensure_yt_dlp()
     return _collect_one_channel(state, channel_url, langs, months, limit, source_id=source_id)
 
@@ -271,9 +275,7 @@ def _collect_one_channel(
             logger.info("  %s | нет субтитров", vid)
 
         # raw_hash считается ПОСЛЕ добавления транскрипции
-        raw_hash = hashlib.sha256(
-            (title + raw_text).encode("utf-8")
-        ).hexdigest()
+        raw_hash = hashlib.sha256((title + raw_text).encode("utf-8")).hexdigest()
 
         queue_id = state.enqueue(
             source_id=source_id,
@@ -295,7 +297,12 @@ def _collect_one_channel(
         if new_for_channel % 5 == 0:
             time.sleep(1.5)
 
-    logger.info("  Новых: %s, с субтитрами: %s, уже было: %s", new_for_channel, subs_for_channel, skipped_for_channel)
+    logger.info(
+        "  Новых: %s, с субтитрами: %s, уже было: %s",
+        new_for_channel,
+        subs_for_channel,
+        skipped_for_channel,
+    )
 
     return {
         "source": "youtube",

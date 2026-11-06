@@ -59,15 +59,15 @@ jobs:
         if: always()
         run: |
           mkdir -p "${{ env.KB_VAULT_PATH }}" "${{ runner.temp }}/kb-data"
-          # Восстанавливаем state.db, если есть
-          if [ -f "${{ runner.temp }}/kb-restore/state.db" ]; then
-            cp "${{ runner.temp }}/kb-restore/state.db" "${{ env.KB_DB_PATH }}"
+          # Восстанавливаем state.db, если есть (артефакт содержит kb-data/state.db)
+          if [ -f "${{ runner.temp }}/kb-restore/kb-data/state.db" ]; then
+            cp "${{ runner.temp }}/kb-restore/kb-data/state.db" "${{ env.KB_DB_PATH }}"
             echo "Restored state.db from previous run"
           fi
           # Восстанавливаем vault полностью (сохраняя структуру папок), если есть
-          if [ -d "${{ runner.temp }}/kb-restore" ] && [ "$(ls -A ${{ runner.temp }}/kb-restore)" ]; then
-            # Копируем всё содержимое vault рекурсивно, сохраняя структуру папок
-            cp -r "${{ runner.temp }}/kb-restore/." "${{ env.KB_VAULT_PATH }}/" 2>/dev/null || true
+          if [ -d "${{ runner.temp }}/kb-restore/kb-vault" ] && [ "$(ls -A ${{ runner.temp }}/kb-restore/kb-vault)" ]; then
+            # Копируем содержимое vault рекурсивно, сохраняя структуру папок
+            cp -r "${{ runner.temp }}/kb-restore/kb-vault/." "${{ env.KB_VAULT_PATH }}/" 2>/dev/null || true
             echo "Restored vault from previous run"
           fi
 

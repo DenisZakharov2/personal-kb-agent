@@ -48,5 +48,9 @@ jobs:
       - name: Check uv lock
         run: uv lock --check
 
+      - name: Check config/ and kb_agent/resources/ sync
+        run: |
+          diff -ru config/ kb_agent/resources/ || (echo "Рассинхрон шаблонов между config/ и kb_agent/resources/!" && exit 1)
+
       - name: Build wheel
         run: pip wheel . --no-deps --no-build-isolation

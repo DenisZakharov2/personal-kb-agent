@@ -22,9 +22,19 @@ HEADERS = {
 }
 
 SPAM_KEYWORDS = [
-    "розыгрыш", "giveaway", "подпишись на канал", "подписаться на",
-    "реклама", "вложения", "заработай", "инвестируй", "купи",
-    "промокод", "скидка", "розыгрыш приза", "бесплатный розыгрыш",
+    "розыгрыш",
+    "giveaway",
+    "подпишись на канал",
+    "подписаться на",
+    "реклама",
+    "вложения",
+    "заработай",
+    "инвестируй",
+    "купи",
+    "промокод",
+    "скидка",
+    "розыгрыш приза",
+    "бесплатный розыгрыш",
 ]
 
 
@@ -62,6 +72,8 @@ def fetch_channel_posts(channel: str, limit: int) -> list[dict]:
     messages = soup.select(".tgme_widget_message")
     if limit > 0:
         messages = messages[-limit:]
+    # Если сообщений меньше limit, берём все
+    return messages
 
     posts: list[dict] = []
     for msg in messages:
@@ -88,14 +100,16 @@ def fetch_channel_posts(channel: str, limit: int) -> list[dict]:
         if not message_id:
             continue
 
-        posts.append({
-            "channel": channel,
-            "message_id": message_id,
-            "date": date,
-            "link": link,
-            "text": text,
-            "is_spam": _is_spam(text),
-        })
+        posts.append(
+            {
+                "channel": channel,
+                "message_id": message_id,
+                "date": date,
+                "link": link,
+                "text": text,
+                "is_spam": _is_spam(text),
+            }
+        )
     return posts
 
 
@@ -146,9 +160,7 @@ def _collect_one_channel(
 
     for p in posts:
         external_id = f"{channel_name}_{p['message_id']}"
-        raw_hash = hashlib.sha256(
-            (p["text"] + p["link"]).encode("utf-8")
-        ).hexdigest()
+        raw_hash = hashlib.sha256((p["text"] + p["link"]).encode("utf-8")).hexdigest()
 
         # Спам — не пишем в очередь, только считаем
         if p["is_spam"]:
@@ -175,7 +187,12 @@ def _collect_one_channel(
             continue
         new_for_channel += 1
 
-    logger.info("  Новых: %s, спама: %s, уже было: %s", new_for_channel, spam_for_channel, existing_for_channel)
+    logger.info(
+        "  Новых: %s, спама: %s, уже было: %s",
+        new_for_channel,
+        spam_for_channel,
+        existing_for_channel,
+    )
 
     return {
         "source": "telegram",
