@@ -54,7 +54,7 @@ def fetch_channel_posts(channel: str, limit: int) -> list[dict]:
             r = client.get(url, headers=HEADERS)
             if r.status_code != 200:
                 raise RuntimeError(f"Не удалось открыть {channel} (статус {r.status_code})")
-    except Exception as e:
+    except httpx.RequestError as e:
         raise RuntimeError(f"Ошибка при запросе {channel}: {e}")
 
     soup = BeautifulSoup(r.text, "html.parser")

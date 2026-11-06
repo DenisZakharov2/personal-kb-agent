@@ -60,7 +60,8 @@ def _parse_frontmatter(content: str) -> tuple[dict, str]:
             return {}, content
         body = "\n".join(lines[body_start:])
         return data, body
-    except Exception:
+    except yaml.YAMLError:
+        # Invalid YAML in frontmatter - treat as no frontmatter
         return {}, content
 
 

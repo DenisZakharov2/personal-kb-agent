@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 YouTube -> KB collector (двухэтапный сбор с транскрипциями).
 
@@ -143,7 +142,7 @@ def fetch_channel_videos(channel_url: str) -> list[dict]:
         "--match-filter", "!is_short & duration > 60",
         channel_url + "/videos",
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+    result = subprocess.run(cmd, check=False, capture_output=True, text=True, timeout=300)
     if result.returncode != 0:
         sys.stderr.write(f"yt-dlp error: {result.stderr}\n")
         return []
@@ -214,7 +213,7 @@ def fetch_transcript(video_id: str, video_url: str, langs: list[str]) -> str | N
             "--output", out_tmpl, video_url,
         ]
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+            result = subprocess.run(cmd, check=False, capture_output=True, text=True, timeout=120)
         except subprocess.TimeoutExpired:
             continue
         if result.returncode != 0:
@@ -286,7 +285,7 @@ def cmd_transcripts(args: argparse.Namespace) -> int:
                 print(f"OK ({len(text)} знаков)")
             else:
                 print("ПРОПУЩЕН (нет субтитров)")
-        except Exception as ex:
+        except (subprocess.TimeoutExpired, OSError, json.JSONDecodeError) as ex:
             print(f"ОШИБКА: {ex}")
         if i < len(pending):
             time.sleep(1.5)

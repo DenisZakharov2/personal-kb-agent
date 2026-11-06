@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Annotated
 
 import typer
 
@@ -160,18 +161,9 @@ def import_path(
 
 @app.command(name="import")
 def import_command(
-    path: Path = typer.Argument(..., help="Папка с .md/.txt файлами для импорта"),
-    dry_run: bool = typer.Option(
-        False,
-        "--dry-run",
-        help="Только показать, что будет импортировано, без записи в vault и БД",
-    ),
-    json_output: bool = typer.Option(
-        False,
-        "--json",
-        "-j",
-        help="Вывести результат в формате JSON",
-    ),
+    path: Annotated[Path, typer.Argument(help="Папка с .md/.txt файлами для импорта")],
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Только показать, что будет импортировано, без записи в vault и БД")] = False,
+    json_output: Annotated[bool, typer.Option("--json", "-j", help="Вывести результат в формате JSON")] = False,
 ) -> None:
     """Импортирует Markdown/TXT файлы из папки в базу знаний."""
     config = load_config()

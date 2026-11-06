@@ -10,7 +10,7 @@ from typer.testing import CliRunner
 
 from kb_agent.cli.main import app
 
-import_mod = importlib.import_module("kb_agent.cli.commands.import")
+import_mod = importlib.import_module("kb_agent.cli.commands.import_cmd")
 
 
 def _write_note(src: Path, name: str, fm: dict, body: str) -> None:
@@ -28,7 +28,7 @@ def _write_note(src: Path, name: str, fm: dict, body: str) -> None:
 
 class TestImportCommand:
     def test_import_creates_notes_and_fts(self, config, state, temp_dir, monkeypatch):
-        monkeypatch.setattr("kb_agent.cli.commands.import.load_config", lambda: config)
+        monkeypatch.setattr("kb_agent.cli.commands.import_cmd.load_config", lambda: config)
         src = temp_dir / "src"
         src.mkdir()
         _write_note(
@@ -62,7 +62,7 @@ class TestImportCommand:
         assert "нейросети" in raw["raw_content"]
 
     def test_import_idempotent_no_duplicates(self, config, state, temp_dir, monkeypatch):
-        monkeypatch.setattr("kb_agent.cli.commands.import.load_config", lambda: config)
+        monkeypatch.setattr("kb_agent.cli.commands.import_cmd.load_config", lambda: config)
         src = temp_dir / "src"
         src.mkdir()
         _write_note(
@@ -93,7 +93,7 @@ class TestImportCommand:
         assert len(found) == 1
 
     def test_import_updates_existing_note_on_source_change(self, config, state, temp_dir, monkeypatch):
-        monkeypatch.setattr("kb_agent.cli.commands.import.load_config", lambda: config)
+        monkeypatch.setattr("kb_agent.cli.commands.import_cmd.load_config", lambda: config)
         src = temp_dir / "src"
         src.mkdir()
         _write_note(
@@ -147,7 +147,7 @@ class TestImportCommand:
         assert fts_rows["c"] == 1
 
     def test_import_dry_run_does_not_write(self, config, state, temp_dir, monkeypatch):
-        monkeypatch.setattr("kb_agent.cli.commands.import.load_config", lambda: config)
+        monkeypatch.setattr("kb_agent.cli.commands.import_cmd.load_config", lambda: config)
         src = temp_dir / "src"
         src.mkdir()
         _write_note(
@@ -168,7 +168,7 @@ class TestImportCommand:
         assert state.search("dry-run", limit=5) == []
 
     def test_import_nonexistent_path(self, config, state, temp_dir, monkeypatch):
-        monkeypatch.setattr("kb_agent.cli.commands.import.load_config", lambda: config)
+        monkeypatch.setattr("kb_agent.cli.commands.import_cmd.load_config", lambda: config)
         runner = CliRunner()
         result = runner.invoke(
             app, ["import", str(temp_dir / "does_not_exist")], prog_name="kb-agent"

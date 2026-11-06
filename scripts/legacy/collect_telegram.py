@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Сборщик постов из Telegram-каналов (этап 1 двухэтапного сбора).
 
@@ -77,7 +76,7 @@ def fetch_channel_posts(channel: str, limit: int) -> list[dict]:
         if r.status_code != 200:
             print(f"  Не удалось открыть {channel} (статус {r.status_code})")
             return []
-    except Exception as e:
+    except requests.RequestException as e:
         print(f"  Ошибка при запросе {channel}: {e}")
         return []
 

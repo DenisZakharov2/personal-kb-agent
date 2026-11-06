@@ -559,8 +559,8 @@ def process_skipped(
         logger.exception("Ошибка skipped")
         try:
             state_mgr.close()
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception:
+            logger.exception("Ошибка при закрытии БД")
         if json_output:
             _output_json({"error": str(exc), "items": []})
         else:
@@ -805,8 +805,8 @@ def process_backup(
         logger.exception("Ошибка backup")
         try:
             state.close()
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception:
+            logger.exception("Ошибка при закрытии БД")
         if json_output:
             _output_json({"error": str(exc), "archive": None})
         else:

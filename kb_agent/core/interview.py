@@ -88,7 +88,7 @@ class InterviewManager:
         try:
             data = yaml.safe_load(self.profile_path.read_text(encoding="utf-8"))
             return data.get("user") if isinstance(data, dict) else None
-        except Exception:
+        except (yaml.YAMLError, OSError):
             return None
 
     def profile_exists(self) -> bool:

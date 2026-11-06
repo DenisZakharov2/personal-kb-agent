@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Сборщик постов из Telegram-каналов.
 Сохраняет новые посты в папку "Входящие" для последующей обработки агентом.
@@ -168,7 +167,7 @@ def main():
 
             print(f"  Новых в канале: {channel_new}")
 
-        except Exception as e:
+        except requests.RequestException as e:
             print(f"  Ошибка: {e}")
 
     save_processed(processed)

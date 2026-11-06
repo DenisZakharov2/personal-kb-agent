@@ -167,7 +167,7 @@ def _download_subs(
 
     try:
         raw = raw_path.read_text(encoding="utf-8", errors="replace")
-    except Exception as exc:
+    except OSError as exc:
         logger.warning("  %s | ошибка чтения субтитров: %s", video_id, exc)
         return None
 

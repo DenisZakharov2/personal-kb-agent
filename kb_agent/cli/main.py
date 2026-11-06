@@ -134,11 +134,11 @@ app.command(name="backup", help="Экспорт SQLite + vault в zip-архив
 
 # Импорт существующих Markdown/TXT файлов (раздел 9 аудита).
 # Регистрируется отдельно: «import» — зарезервированное слово Python, поэтому
-# модуль kb_agent.cli.commands.import загружается через importlib, а его
+# модуль kb_agent.cli.commands.import_cmd загружается через importlib, а его
 # единственная команда выносится на корень как `kb-agent import <путь>`.
 import importlib
 
-_import_app = importlib.import_module("kb_agent.cli.commands.import").app
+_import_app = importlib.import_module("kb_agent.cli.commands.import_cmd").app
 for _command in _import_app.registered_commands:
     app.command(name=_command.name or "import", help=_command.help)(_command.callback)
 
