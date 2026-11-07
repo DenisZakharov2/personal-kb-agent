@@ -5,6 +5,16 @@
 Формат основан на [Keep a Changelog](https://keepachangelog.com/ru/1.0.0/),
 и проект следует [Semantic Versioning](https://semver.org/lang/ru/).
 
+## [0.2.1] - 2026-11-07
+
+### Исправлено
+- `rebuild_fts()` теперь индексирует текст заметки (`content`), а не её хеш (`content_hash`) — полнотекстовый поиск работает после перестроения индекса
+- Команда `kb-agent import` зарегистрирована корректно (убрано несуществующее обращение к `Typer.registered_commands`)
+- Японские символы в комментарии `kb_agent/utils/logger.py` заменены на русские
+- Опечатка `conтенте` в системном промпте LLM (`kb_agent/processing/llm_client.py`) исправлена на `контенте`
+- Убран мертвый тернарный оператор в `kb_agent/sources/registry.py` для YouTube-источников
+- Описание CLI команды `main` приведено к понятному виду
+
 ## [0.2.0] - 2026-11-06
 
 ### Добавлено

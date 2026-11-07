@@ -69,7 +69,7 @@ def normalize_source(
 
         if not source_id:
             channel = url.rstrip("/").split("/")[-1].replace("@", "")
-            source_id = f"{'tg' if source_type == 'telegram' else 'yt'}_{channel}"
+            source_id = f"yt_{channel}"
         return source_id, url, source_type
 
 

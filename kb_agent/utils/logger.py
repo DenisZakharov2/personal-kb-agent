@@ -20,7 +20,7 @@ _SECRET_PATTERNS = [
 ]
 
 _LOGGER_FORMAT = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
-# ローテーション: до 5 МБ на файл, хранить до 5 файлов.
+# Ротация: до 5 МБ на файл, хранить до 5 файлов.
 _LOG_MAX_BYTES = 5 * 1024 * 1024
 _LOG_BACKUP_COUNT = 5
 

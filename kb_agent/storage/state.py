@@ -1064,7 +1064,7 @@ class StateManager:
             cur = conn.execute(
                 """
                 INSERT INTO notes_fts (note_id, title, tags, topic, content)
-                SELECT note_id, title, tags, topic, content_hash
+                SELECT note_id, title, tags, topic, content
                 FROM notes
                 """
             )

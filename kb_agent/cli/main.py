@@ -47,7 +47,7 @@ from kb_agent.cli.commands.self_improve import app as self_improve_app
 from kb_agent.cli.commands.sources import app as sources_app
 
 app = typer.Typer(
-    help="AI-агент для базы знаний ТГК",
+    help="AI-агент для персональной базы знаний",
 )
 
 
@@ -134,13 +134,10 @@ app.command(name="backup", help="Экспорт SQLite + vault в zip-архив
 
 # Импорт существующих Markdown/TXT файлов (раздел 9 аудита).
 # Регистрируется отдельно: «import» — зарезервированное слово Python, поэтому
-# модуль kb_agent.cli.commands.import_cmd загружается через importlib, а его
-# единственная команда выносится на корень как `kb-agent import <путь>`.
-import importlib
+# команда выносится на корень как `kb-agent import <путь>`.
+from kb_agent.cli.commands.import_cmd import import_command
 
-_import_app = importlib.import_module("kb_agent.cli.commands.import_cmd").app
-for _command in _import_app.registered_commands:
-    app.command(name=_command.name or "import", help=_command.help)(_command.callback)
+app.command(name="import", help=import_command.__doc__)(import_command)
 
 
 if __name__ == "__main__":
