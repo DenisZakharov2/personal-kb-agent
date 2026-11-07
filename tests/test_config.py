@@ -68,6 +68,9 @@ class TestConfigPaths:
         как есть (явный путь имеет приоритет).
         """
         monkeypatch.setenv("KB_DATA_DIR", str(tmp_path / "data"))
+        # Явные пути из .env (имитируем наличие .env файла)
+        monkeypatch.setenv("KB_VAULT_PATH", str(tmp_path / "my_vault"))
+        monkeypatch.setenv("KB_LOG_PATH", str(tmp_path / "my.log"))
         from kb_agent.config import load_config
 
         config = load_config()
@@ -76,8 +79,8 @@ class TestConfigPaths:
         assert config.sources_path == tmp_path / "data" / "sources.yaml"
         assert config.profile_path == tmp_path / "data" / "user_profile.yaml"
         # Явные пути из .env не перезаписываются KB_DATA_DIR
-        assert config.vault_path != tmp_path / "data" / "vault"
-        assert config.log_path != tmp_path / "data" / "kb_agent.log"
+        assert config.vault_path == tmp_path / "my_vault"
+        assert config.log_path == tmp_path / "my.log"
 
     def test_explicit_env_paths_win(self, monkeypatch, tmp_path):
         """Явные KB_*-пути из окружения используются как есть (приоритет над .env)."""
