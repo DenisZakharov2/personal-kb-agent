@@ -17,6 +17,7 @@ logger = setup_logger("kb_agent.feedback.collector")
 @dataclass
 class FeedbackEntry:
     """Запись обратной связи."""
+
     note_id: str
     score: int
     comment: str
@@ -42,7 +43,9 @@ class FeedbackCollector:
         feedback_id = self.state.add_feedback(note_id, score, comment)
         logger.info(
             "Обратная связь: note_id=%s score=%s comment=%s",
-            note_id, score, comment,
+            note_id,
+            score,
+            comment,
         )
         return feedback_id
 

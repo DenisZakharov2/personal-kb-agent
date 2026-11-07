@@ -53,6 +53,7 @@ def _extract_json_block(text: str) -> str:
         return text[start : end + 1]
     return text or ""
 
+
 # Статусы, при которых имеет смысл повторить запрос
 _RETRYABLE_STATUS = {408, 409, 425, 429, 500, 502, 503, 504}
 
@@ -152,9 +153,12 @@ class LLMClient:
                     last_error = f"HTTP {resp.status_code}"
                     logger.warning(
                         "LLM (%s): %s, повтор %s/%s",
-                        self.provider, last_error, attempt + 1, attempts - 1,
+                        self.provider,
+                        last_error,
+                        attempt + 1,
+                        attempts - 1,
                     )
-                    time.sleep(0.5 * (2 ** attempt))
+                    time.sleep(0.5 * (2**attempt))
                     continue
 
                 if resp.status_code != 200:
@@ -186,9 +190,12 @@ class LLMClient:
                 if attempt + 1 < attempts:
                     logger.warning(
                         "LLM (%s): %s, повтор %s/%s",
-                        self.provider, last_error, attempt + 1, attempts - 1,
+                        self.provider,
+                        last_error,
+                        attempt + 1,
+                        attempts - 1,
                     )
-                    time.sleep(0.5 * (2 ** attempt))
+                    time.sleep(0.5 * (2**attempt))
                     continue
                 logger.exception("Ошибка при вызове LLM API")
                 self.last_response = LLMResponse(
@@ -276,7 +283,9 @@ class LLMClient:
         ``Общее`` и пустым содержимым), чтобы конвейер мог продолжить работу.
         """
         topics = topics or []
-        topics_hint = f"\nДопустимые темы (выберите ровно одну): {', '.join(topics)}" if topics else ""
+        topics_hint = (
+            f"\nДопустимые темы (выберите ровно одну): {', '.join(topics)}" if topics else ""
+        )
         if system_prompt is None:
             system_prompt = (
                 "Вы — опытный редактор базы знаний. Прочитайте сырой текст источника "
@@ -304,7 +313,7 @@ class LLMClient:
             if resp.error:
                 last_error = resp.error or "пустой ответ от LLM"
                 if attempt + 1 <= self.max_retries:
-                    time.sleep(0.5 * (2 ** attempt))
+                    time.sleep(0.5 * (2**attempt))
                 continue
             try:
                 data = json.loads(_extract_json_block(resp.text))
@@ -320,7 +329,7 @@ class LLMClient:
                     exc,
                 )
                 if attempt + 1 <= self.max_retries:
-                    time.sleep(0.5 * (2 ** attempt))
+                    time.sleep(0.5 * (2**attempt))
 
         logger.error("Не удалось получить валидную структуру от LLM: %s", last_error)
         return SummaryData(topic=self._validate_topic("Общее", topics))

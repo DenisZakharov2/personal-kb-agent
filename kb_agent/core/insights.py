@@ -112,9 +112,7 @@ class InsightsEngine:
             return []
 
         conn = self.state.connect()
-        rows = conn.execute(
-            "SELECT title, tags, topic, content FROM notes_fts"
-        ).fetchall()
+        rows = conn.execute("SELECT title, tags, topic, content FROM notes_fts").fetchall()
         haystack = " ".join(
             " ".join(str(row[key] or "") for key in ("title", "tags", "topic", "content"))
             for row in rows

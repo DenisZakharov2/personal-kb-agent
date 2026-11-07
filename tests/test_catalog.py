@@ -21,16 +21,16 @@ def _make_vault(temp_dir: Path) -> VaultManager:
     return VaultManager(config)
 
 
-def _write_note(vault: VaultManager, topic: str, title: str, content: str, bad_fm: bool = False) -> Path:
+def _write_note(
+    vault: VaultManager, topic: str, title: str, content: str, bad_fm: bool = False
+) -> Path:
     folder = vault._topic_folder(topic)
     file_name = f"{_slugify(title)}.md"
     file_path = folder / file_name
     if bad_fm:
         frontmatter = "---\nthis: is: broken: [unclosed\n---\n"
     else:
-        frontmatter = (
-            f"---\ntitle: {title}\ntopic: {topic}\ntags: [тэг1]\n---\n"
-        )
+        frontmatter = f"---\ntitle: {title}\ntopic: {topic}\ntags: [тэг1]\n---\n"
     file_path.write_text(frontmatter + f"# {title}\n\n{content}\n", encoding="utf-8")
     return file_path
 
@@ -101,7 +101,9 @@ class TestCatalogGenerate:
 
         text = (vault.vault_path / "Каталог.md").read_text(encoding="utf-8")
         assert "Хорошая" in text
-        assert "плохая" in text  # заметка попадает в каталог (тема по умолчанию, заголовок от имени файла)
+        assert (
+            "плохая" in text
+        )  # заметка попадает в каталог (тема по умолчанию, заголовок от имени файла)
 
     def test_frontmatter_at_sign_value_is_parsed(self, temp_dir):
         """Значение frontmatter, начинающееся с @, экранируется и парсится (например источник: @ragnarokzone)."""

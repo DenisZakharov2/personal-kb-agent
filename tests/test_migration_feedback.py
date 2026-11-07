@@ -130,15 +130,9 @@ def _setup_db_v9(db_path: Path) -> None:
             );
             """
         )
-        conn.execute(
-            "INSERT INTO feedback (note_id, score, comment) VALUES ('n1', 5, 'отлично')"
-        )
-        conn.execute(
-            "INSERT INTO feedback (note_id, score, comment) VALUES ('n2', 3, 'нормально')"
-        )
-        conn.execute(
-            "INSERT INTO schema_version (version) VALUES (9)"
-        )
+        conn.execute("INSERT INTO feedback (note_id, score, comment) VALUES ('n1', 5, 'отлично')")
+        conn.execute("INSERT INTO feedback (note_id, score, comment) VALUES ('n2', 3, 'нормально')")
+        conn.execute("INSERT INTO schema_version (version) VALUES (9)")
         conn.commit()
     finally:
         conn.close()
@@ -161,7 +155,9 @@ def _feedback_rows(db_path: Path) -> list[dict]:
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
     try:
-        rows = conn.execute("SELECT id, note_id, score, comment FROM feedback ORDER BY id").fetchall()
+        rows = conn.execute(
+            "SELECT id, note_id, score, comment FROM feedback ORDER BY id"
+        ).fetchall()
         return [dict(r) for r in rows]
     finally:
         conn.close()

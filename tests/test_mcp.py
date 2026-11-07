@@ -15,8 +15,9 @@ class TestMcpCapabilities:
         tools = asyncio.run(handle_list_tools())
         tool_names = [t.name for t in tools]
 
-        assert "kb_confirm_change" not in tool_names, \
+        assert "kb_confirm_change" not in tool_names, (
             f"kb_confirm_change не должен быть доступен модели. Инструменты: {tool_names}"
+        )
         assert not any("confirm" in name for name in tool_names)
 
         # Write-инструменты должны быть доступны (создают pending, но не применяют)
@@ -207,9 +208,7 @@ class TestMcpProposals:
 
         monkeypatch.setattr(mcp_server_mod, "load_config", lambda: config)
 
-        result = asyncio.run(
-            handle_call_tool("kb_get_proposal", {"proposal_id": "нет такого"})
-        )
+        result = asyncio.run(handle_call_tool("kb_get_proposal", {"proposal_id": "нет такого"}))
 
         assert result.isError is True
         assert result.structuredContent["code"] == "not_found"
@@ -266,9 +265,7 @@ class TestMcpProposals:
         )
 
         result = asyncio.run(
-            handle_call_tool(
-                "kb_reject_proposal", {"proposal_id": "prop-rej-confirm-1"}
-            )
+            handle_call_tool("kb_reject_proposal", {"proposal_id": "prop-rej-confirm-1"})
         )
         assert isinstance(result, list)
         change_id = None
@@ -299,9 +296,7 @@ class TestMcpProposals:
 
         monkeypatch.setattr(mcp_server_mod, "load_config", lambda: config)
 
-        result = asyncio.run(
-            handle_call_tool("kb_reject_proposal", {"proposal_id": "нет такого"})
-        )
+        result = asyncio.run(handle_call_tool("kb_reject_proposal", {"proposal_id": "нет такого"}))
 
         # Инструмент сам создаёт pending-запрос (не ошибается на входе).
         assert isinstance(result, list)

@@ -402,7 +402,9 @@ class StateManager:
             """
         )
         conn.commit()
-        row = conn.execute("SELECT version FROM schema_version ORDER BY version DESC LIMIT 1").fetchone()
+        row = conn.execute(
+            "SELECT version FROM schema_version ORDER BY version DESC LIMIT 1"
+        ).fetchone()
         current_version = row["version"] if row else 0
         for version, step in _SCHEMA:
             if version > current_version:
@@ -450,14 +452,10 @@ class StateManager:
     def get_queue_item(self, queue_id: int) -> dict | None:
         """Возвращает запись raw_queue по id."""
         conn = self.connect()
-        row = conn.execute(
-            "SELECT * FROM raw_queue WHERE id = ?", (queue_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM raw_queue WHERE id = ?", (queue_id,)).fetchone()
         return dict(row) if row else None
 
-    def get_queue_item_by_external(
-        self, source_id: str, external_id: str
-    ) -> dict | None:
+    def get_queue_item_by_external(self, source_id: str, external_id: str) -> dict | None:
         """Возвращает запись raw_queue по паре (source_id, external_id)."""
         conn = self.connect()
         row = conn.execute(
@@ -554,7 +552,7 @@ class StateManager:
             ).fetchone()
             current_attempts = int(row["attempts"] or 0) if row else 0
             # Экспоненциальный backoff: 1, 2, 4, 8, ... минут, максимум 24 часа.
-            delay_minutes = min(2 ** current_attempts, 60 * 24)
+            delay_minutes = min(2**current_attempts, 60 * 24)
             next_retry_at = (
                 datetime.now(timezone.utc) + timedelta(minutes=delay_minutes)
             ).isoformat()
@@ -605,7 +603,9 @@ class StateManager:
                 return None
 
             queue_id = row["id"]
-            lease_expires = (datetime.now(timezone.utc) + timedelta(seconds=lease_seconds)).isoformat()
+            lease_expires = (
+                datetime.now(timezone.utc) + timedelta(seconds=lease_seconds)
+            ).isoformat()
 
             conn.execute(
                 """
@@ -817,9 +817,7 @@ class StateManager:
         ).fetchone()
         return dict(row) if row else None
 
-    def list_queue(
-        self, state: str | None = None, limit: int = 100
-    ) -> list[dict]:
+    def list_queue(self, state: str | None = None, limit: int = 100) -> list[dict]:
         """Возвращает элементы raw_queue, опционально отфильтрованные по состоянию.
 
         Например, state='skipped' — просмотр пропущенных материалов, которые
@@ -887,9 +885,7 @@ class StateManager:
             ).fetchone()
             if keep_row is None or drop_row is None:
                 conn.rollback()
-                raise ValueError(
-                    f"Заметка не найдена: keep={keep_note_id}, drop={drop_note_id}"
-                )
+                raise ValueError(f"Заметка не найдена: keep={keep_note_id}, drop={drop_note_id}")
 
             # a) notes — дубль помечается архивным, основная остаётся без изменений.
             conn.execute(
@@ -914,14 +910,10 @@ class StateManager:
             links_moved = 0
             for row in drop_links:
                 src = (
-                    keep_note_id
-                    if row["source_note_id"] == drop_note_id
-                    else row["source_note_id"]
+                    keep_note_id if row["source_note_id"] == drop_note_id else row["source_note_id"]
                 )
                 tgt = (
-                    keep_note_id
-                    if row["target_note_id"] == drop_note_id
-                    else row["target_note_id"]
+                    keep_note_id if row["target_note_id"] == drop_note_id else row["target_note_id"]
                 )
                 link_type = row["link_type"]
 
@@ -971,9 +963,7 @@ class StateManager:
                     (keep_note_id, drop_note_id),
                 )
                 raw_content_moved = True
-            conn.execute(
-                "DELETE FROM note_raw_content WHERE note_id = ?", (drop_note_id,)
-            )
+            conn.execute("DELETE FROM note_raw_content WHERE note_id = ?", (drop_note_id,))
 
             # d) notes_fts — удаляем дубль из поисковой проекции.
             drop_fts = conn.execute(
@@ -981,9 +971,7 @@ class StateManager:
             ).fetchone()
             fts_entries_removed = 0
             if drop_fts:
-                conn.execute(
-                    "DELETE FROM notes_fts WHERE note_id = ?", (drop_note_id,)
-                )
+                conn.execute("DELETE FROM notes_fts WHERE note_id = ?", (drop_note_id,))
                 fts_entries_removed = 1
 
             conn.commit()
@@ -1234,9 +1222,7 @@ class StateManager:
             c.commit()
         return cur.lastrowid
 
-    def get_active_prompt(
-        self, prompt_name: str, prompt_type: str | None = None
-    ) -> dict | None:
+    def get_active_prompt(self, prompt_name: str, prompt_type: str | None = None) -> dict | None:
         conn = self.connect()
         if prompt_type is not None:
             row = conn.execute(
@@ -1375,7 +1361,9 @@ class StateManager:
             rows = conn.execute("SELECT * FROM sources ORDER BY added_at").fetchall()
         return [dict(row) for row in rows]
 
-    def set_source_enabled(self, source_id: str, enabled: bool, conn: sqlite3.Connection | None = None) -> bool:
+    def set_source_enabled(
+        self, source_id: str, enabled: bool, conn: sqlite3.Connection | None = None
+    ) -> bool:
         c = conn or self.connect()
         own = conn is None
         cur = c.execute(
@@ -1535,7 +1523,9 @@ class StateManager:
                 c.commit()
             logger.info(
                 "Промпт %s: версия %s активирована (подтвердил %s)",
-                prompt_name, version, confirmed_by,
+                prompt_name,
+                version,
+                confirmed_by,
             )
             return True
         except Exception:

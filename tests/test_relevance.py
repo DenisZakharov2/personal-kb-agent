@@ -65,7 +65,15 @@ class TestRelevanceGateBestMatch:
     def test_no_match_with_many_topics_fails(self):
         """Если ни одна тема не совпала — не релевантно, независимо от числа тем."""
         profile = {
-            "topics": ["ИИ", "программирование", "автоматизация", "нейросети", "python", "go", "rust"],
+            "topics": [
+                "ИИ",
+                "программирование",
+                "автоматизация",
+                "нейросети",
+                "python",
+                "go",
+                "rust",
+            ],
             "goal": "",
             "tasks": "",
         }

@@ -32,7 +32,8 @@ class TestSetupLogger:
         setup_logger("kb_agent.test.idem", log_path=log_path)
 
         file_handlers = [
-            h for h in logging.getLogger("kb_agent.test.idem").handlers
+            h
+            for h in logging.getLogger("kb_agent.test.idem").handlers
             if isinstance(h, logging.handlers.RotatingFileHandler)
         ]
         assert len(file_handlers) == 1
@@ -40,9 +41,7 @@ class TestSetupLogger:
     def test_setup_logger_without_log_path_no_file_handler(self):
         """Без log_path файлового обработчика нет."""
         logger = setup_logger("kb_agent.test.nofile")
-        assert not any(
-            isinstance(h, logging.handlers.RotatingFileHandler) for h in logger.handlers
-        )
+        assert not any(isinstance(h, logging.handlers.RotatingFileHandler) for h in logger.handlers)
         assert any(isinstance(h, logging.StreamHandler) for h in logger.handlers)
 
 
@@ -52,9 +51,7 @@ class TestConfigureFileLogging:
         log_path = tmp_path / "kb_agent.log"
         # Создаём логгер до настройки файлового логирования (как при импорте модуля)
         logger = setup_logger("kb_agent.test.cfg")
-        assert not any(
-            isinstance(h, logging.handlers.RotatingFileHandler) for h in logger.handlers
-        )
+        assert not any(isinstance(h, logging.handlers.RotatingFileHandler) for h in logger.handlers)
 
         configure_file_logging(log_path)
 

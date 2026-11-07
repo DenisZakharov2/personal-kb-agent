@@ -99,9 +99,7 @@ class TestGenerationLog:
 
     def test_generation_log_invalid_operation_rejected(self, state):
         try:
-            state.save_generation_log(
-                note_id=None, operation="bad_op", model="m"
-            )
+            state.save_generation_log(note_id=None, operation="bad_op", model="m")
             raise AssertionError("должно быть ValueError")
         except ValueError:
             pass
@@ -126,21 +124,26 @@ class TestPipelineIdempotentUpdate:
         state.close()
 
         pipeline = Pipeline(config)
-        pipeline.relevance = __import__("kb_agent.core.relevance", fromlist=["RelevanceGate"]).RelevanceGate({})
+        pipeline.relevance = __import__(
+            "kb_agent.core.relevance", fromlist=["RelevanceGate"]
+        ).RelevanceGate({})
 
-        with __import__("unittest.mock", fromlist=["patch"]).patch.object(
-            pipeline.llm, "summarize_structured"
-        ) as mock_summarize, \
-             __import__("unittest.mock", fromlist=["patch"]).patch.object(
-                 pipeline.vault, "write_note"
-             ) as mock_write, \
-             __import__("unittest.mock", fromlist=["patch"]).patch.object(
-                 pipeline.state, "index_note"
-             ) as mock_index:
-
+        with (
+            __import__("unittest.mock", fromlist=["patch"]).patch.object(
+                pipeline.llm, "summarize_structured"
+            ) as mock_summarize,
+            __import__("unittest.mock", fromlist=["patch"]).patch.object(
+                pipeline.vault, "write_note"
+            ) as mock_write,
+            __import__("unittest.mock", fromlist=["patch"]).patch.object(
+                pipeline.state, "index_note"
+            ) as mock_index,
+        ):
             mock_summarize.return_value = SummaryData(
-                title="Обновлённое", content="## Суть\nновое содержимое\n",
-                tags=["тэг"], topic="Тема",
+                title="Обновлённое",
+                content="## Суть\nновое содержимое\n",
+                tags=["тэг"],
+                topic="Тема",
             )
             mock_write.return_value = None
             mock_index.return_value = None
@@ -152,7 +155,14 @@ class TestPipelineIdempotentUpdate:
                 (source_id, external_id, canonical_url, title, raw_text, raw_hash, state)
                 VALUES (?, ?, ?, ?, ?, ?, 'new')
                 """,
-                ("tg_test", "ext_pipeline", "https://t.me/c/1", "Заголовок", "сырой текст", "hash_pipe"),
+                (
+                    "tg_test",
+                    "ext_pipeline",
+                    "https://t.me/c/1",
+                    "Заголовок",
+                    "сырой текст",
+                    "hash_pipe",
+                ),
             )
             conn.commit()
             state.close()

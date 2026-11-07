@@ -154,14 +154,16 @@ def main():
                 filepath, _content = save_raw_post(channel, message_id, date, link, text)
                 append_pending(channel, message_id, date, link, text)
                 processed.add(post_key)
-                new_posts.append({
-                    "channel": channel,
-                    "message_id": message_id,
-                    "date": date,
-                    "link": link,
-                    "text": text,
-                    "filepath": filepath.name,
-                })
+                new_posts.append(
+                    {
+                        "channel": channel,
+                        "message_id": message_id,
+                        "date": date,
+                        "link": link,
+                        "text": text,
+                        "filepath": filepath.name,
+                    }
+                )
                 channel_new += 1
                 print(f"  + {message_id} -> {filepath.name}")
 

@@ -84,20 +84,18 @@ app.add_typer(sources_app, name="sources", help="Управление источ
 app.command(name="confirm", help="Подтвердить и применить pending-запрос write-операции")(
     confirm_command
 )
-app.command(
-    name="pending", help="Показать список pending-запросов write-операций (Этап 4)"
-)(pending_command)
+app.command(name="pending", help="Показать список pending-запросов write-операций (Этап 4)")(
+    pending_command
+)
 
 # Подключаем отдельные команды Этапа 3
 app.command(name="ask", help="Задать вопрос базе знаний и получить ответ со ссылками на заметки")(
     ask_command
 )
-app.command(
-    name="search", help="Поиск заметок по запросу (список результатов)"
-)(search_command)
-app.command(
-    name="insights", help="Показать инсайты: повторяющиеся темы, связи между заметками"
-)(insights_command)
+app.command(name="search", help="Поиск заметок по запросу (список результатов)")(search_command)
+app.command(name="insights", help="Показать инсайты: повторяющиеся темы, связи между заметками")(
+    insights_command
+)
 
 # Подключаем группу update с подкомандой check (Этап 3)
 app.add_typer(update_app, name="update", help="Проверка актуализации базы знаний (Этап 3)")
@@ -108,8 +106,12 @@ app.command(
     help="Объединить две заметки: дубль архивируется, ссылки переносятся на основную",
 )(merge_command)
 
+
 # Команда MCP-сервера (Этап 4)
-@app.command(name="mcp-serve", help="Запустить MCP-сервер для внешних агентов (чтение + pending-запись с подтверждением через CLI)")
+@app.command(
+    name="mcp-serve",
+    help="Запустить MCP-сервер для внешних агентов (чтение + pending-запись с подтверждением через CLI)",
+)
 def mcp_serve() -> None:
     """Запускает MCP-сервер через stdio для доступа внешних агентов."""
     import asyncio

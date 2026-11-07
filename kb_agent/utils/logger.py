@@ -42,7 +42,8 @@ class SecretFilter(logging.Filter):
 
 def _has_console_handler(logger: logging.Logger) -> bool:
     return any(
-        isinstance(h, logging.StreamHandler) and not isinstance(h, logging.handlers.RotatingFileHandler)
+        isinstance(h, logging.StreamHandler)
+        and not isinstance(h, logging.handlers.RotatingFileHandler)
         for h in logger.handlers
     )
 
@@ -110,7 +111,9 @@ def configure_file_logging(log_path: Path | None = None, level: int = logging.IN
     log_path = Path(log_path)
     log_path.parent.mkdir(parents=True, exist_ok=True)
     names = {"kb_agent"} | {
-        name for name in logging.root.manager.loggerDict if name == "kb_agent" or name.startswith("kb_agent.")
+        name
+        for name in logging.root.manager.loggerDict
+        if name == "kb_agent" or name.startswith("kb_agent.")
     }
     for name in names:
         setup_logger(name, log_path=log_path, level=level)

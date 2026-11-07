@@ -35,9 +35,7 @@ def _insert_queue_item(
         ),
     )
     conn.commit()
-    row = conn.execute(
-        "SELECT id FROM raw_queue WHERE external_id = ?", (external_id,)
-    ).fetchone()
+    row = conn.execute("SELECT id FROM raw_queue WHERE external_id = ?", (external_id,)).fetchone()
     assert row is not None
     return row["id"]
 
@@ -107,7 +105,9 @@ class TestLeaseProtection:
         s2.init_db()
         try:
             past = (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat()
-            qid = _insert_queue_item(s1, "job-stuck", queue_state="processing", lease_expires_at=past)
+            qid = _insert_queue_item(
+                s1, "job-stuck", queue_state="processing", lease_expires_at=past
+            )
 
             item1 = s1.claim_next()
             assert item1 is not None

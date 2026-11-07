@@ -22,7 +22,9 @@ class TestRegistryAtomicYaml:
         """После save() sources.yaml валиден, временный файл не остаётся."""
         registry = SourceRegistry(sources_path=tmp_path / "sources.yaml")
         registry._sources = {
-            "tg_test": SourceConfig(id="tg_test", type="telegram", url="https://t.me/s/test", enabled=True),
+            "tg_test": SourceConfig(
+                id="tg_test", type="telegram", url="https://t.me/s/test", enabled=True
+            ),
         }
         registry._loaded = True
 
@@ -63,7 +65,9 @@ class TestRegistryAtomicYaml:
         registry = SourceRegistry(sources_path=config.sources_path, state=state)
         state.add_source("tg_exp", "telegram", "https://t.me/s/exp")
         registry._sources = {
-            "tg_exp": SourceConfig(id="tg_exp", type="telegram", url="https://t.me/s/exp", enabled=True),
+            "tg_exp": SourceConfig(
+                id="tg_exp", type="telegram", url="https://t.me/s/exp", enabled=True
+            ),
         }
         registry._loaded = True
         registry._use_sqlite = True
@@ -96,7 +100,9 @@ class TestSourceNormalization:
         assert sid == "yt_kanal"
 
     def test_normalize_keeps_explicit_source_id(self):
-        sid, _url, st = normalize_source("telegram", "https://t.me/s/chan", source_id="my_custom_id")
+        sid, _url, st = normalize_source(
+            "telegram", "https://t.me/s/chan", source_id="my_custom_id"
+        )
         assert sid == "my_custom_id"
         assert st == "telegram"
 
@@ -119,7 +125,10 @@ class TestSourceNormalization:
         registry._use_sqlite = True
 
         cfg = SourceConfig(
-            id="tg_bad", type="telegram", url="https://example.com/not-telegram", enabled=True,
+            id="tg_bad",
+            type="telegram",
+            url="https://example.com/not-telegram",
+            enabled=True,
         )
         assert registry.add(cfg) is False
 
@@ -130,7 +139,10 @@ class TestSourceNormalization:
         registry._use_sqlite = True
 
         cfg = SourceConfig(
-            id="tg_ok", type="telegram", url="https://t.me/s/okchan", enabled=True,
+            id="tg_ok",
+            type="telegram",
+            url="https://t.me/s/okchan",
+            enabled=True,
         )
         assert registry.add(cfg) is True
         assert registry.get("tg_ok") is not None

@@ -53,9 +53,11 @@ def _create_enable_source(pm: PendingManager, source_id: str = "tg_test") -> str
 
 
 def _result_of(state, change_id: str) -> dict:
-    row = state.connect().execute(
-        "SELECT result FROM pending_changes WHERE change_id = ?", (change_id,)
-    ).fetchone()
+    row = (
+        state.connect()
+        .execute("SELECT result FROM pending_changes WHERE change_id = ?", (change_id,))
+        .fetchone()
+    )
     assert row is not None
     return json.loads(row["result"])
 

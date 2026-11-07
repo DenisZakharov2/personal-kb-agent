@@ -12,7 +12,8 @@ def _make_change(pm: PendingManager, parameters: dict | None = None) -> str:
         action="add_source",
         entity_type="source",
         entity_id="tg_test",
-        parameters=parameters or {
+        parameters=parameters
+        or {
             "source_id": "tg_test",
             "source_type": "telegram",
             "channel": "testchan",
@@ -92,9 +93,7 @@ class TestPendingReject:
 
     def test_reject_change_records_reason(self, config, state):
         pm = PendingManager(state)
-        change_id = pm.create_change(
-            "remove_source", "source", "tg_test", {"source_id": "tg_test"}
-        )
+        change_id = pm.create_change("remove_source", "source", "tg_test", {"source_id": "tg_test"})
 
         assert pm.reject_change(change_id, reason="Не актуально") is True
         updated = pm.get_change(change_id)
@@ -104,9 +103,7 @@ class TestPendingReject:
 
     def test_reject_change_without_reason(self, config, state):
         pm = PendingManager(state)
-        change_id = pm.create_change(
-            "remove_source", "source", "tg_test", {"source_id": "tg_test"}
-        )
+        change_id = pm.create_change("remove_source", "source", "tg_test", {"source_id": "tg_test"})
 
         assert pm.reject_change(change_id) is True
         assert pm.get_change(change_id)["reject_reason"] is None
@@ -214,6 +211,7 @@ class TestPendingUpdateProfile:
         # Профиль создан на диске
         assert config.profile_path.exists()
         import yaml
+
         data = yaml.safe_load(config.profile_path.read_text(encoding="utf-8"))
         assert data["user"]["goal"] == "Тестирование"
         assert data["user"]["topics"] == ["ИИ", "Python"]
@@ -245,6 +243,7 @@ class TestPendingUpdateProfile:
 
         # Фактический профиль обновлён
         import yaml
+
         data = yaml.safe_load(config.profile_path.read_text(encoding="utf-8"))
         assert data["user"]["goal"] == "Новая цель"
         assert data["user"]["topics"] == []

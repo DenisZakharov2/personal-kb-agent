@@ -202,4 +202,6 @@ def interview_periodic() -> None:
     profile.update(updates)
     saved_path = interview.save_profile(profile)
     typer.echo(f"\nПрофиль обновлён: {saved_path}")
-    typer.echo("Запустите 'kb-agent self-improve' для просмотра предложений по промптам и источникам.")
+    typer.echo(
+        "Запустите 'kb-agent self-improve' для просмотра предложений по промптам и источникам."
+    )

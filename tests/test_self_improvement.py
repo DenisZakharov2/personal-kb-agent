@@ -96,17 +96,20 @@ class TestSelfImprovementProposals:
         """_run_test_suite возвращает False, если diff пустой / нет изменений."""
         engine = SelfImprovementEngine(state)
         proposal = ImprovementProposal(
-            proposal_id="x", target="prompt", target_name="agent_prompt",
-            current_version=1, proposed_version=2, diff="(изменений нет)", reason="тест",
+            proposal_id="x",
+            target="prompt",
+            target_name="agent_prompt",
+            current_version=1,
+            proposed_version=2,
+            diff="(изменений нет)",
+            reason="тест",
         )
         assert engine._run_test_suite(proposal) is False
 
     def test_apply_fails_when_no_changes(self, state, config):
         """Применение отменяется, если тестовый набор не пройден."""
         engine = SelfImprovementEngine(state)
-        proposal = engine.propose_prompt_change(
-            "agent_prompt", "контент без изменений", "тест"
-        )
+        proposal = engine.propose_prompt_change("agent_prompt", "контент без изменений", "тест")
         # Подменем diff на «нет изменений», чтобы тестовый набор не прошёл
         proposal.diff = "(изменений нет)"
         assert engine.apply_prompt_proposal(proposal, "контент") is False

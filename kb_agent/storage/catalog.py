@@ -42,10 +42,16 @@ class CatalogGenerator:
                 fixed_lines.append(line)
                 continue
             key = stripped[:colon_pos]
-            value = stripped[colon_pos + 2:]
+            value = stripped[colon_pos + 2 :]
             # Не в кавычках и содержит спецсимволы YAML — экранируем.
-            if value and value[0] not in ('"', "'") and (
-                value.startswith(("@", "- ", "#", "*", "[", "{")) or ": " in value or value.lower() in ("true", "false", "null", "~")
+            if (
+                value
+                and value[0] not in ('"', "'")
+                and (
+                    value.startswith(("@", "- ", "#", "*", "[", "{"))
+                    or ": " in value
+                    or value.lower() in ("true", "false", "null", "~")
+                )
             ):
                 indent = line[: len(line) - len(line.lstrip())]
                 value_escaped = "'" + value.replace("'", "''") + "'"
@@ -104,7 +110,9 @@ class CatalogGenerator:
                 date = date.isoformat()
             elif date is None:
                 date = ""
-            by_topic.setdefault(topic, []).append((date, title, str(note_path.relative_to(vault_path))))
+            by_topic.setdefault(topic, []).append(
+                (date, title, str(note_path.relative_to(vault_path)))
+            )
 
         lines: list[str] = []
         lines.append("# Каталог базы знаний")

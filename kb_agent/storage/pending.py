@@ -73,16 +73,12 @@ class PendingManager:
         change_id = str(uuid.uuid4())
         expires_at: str | None = None
         if ttl_seconds is not None:
-            expires_at = (
-                datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds)
-            ).isoformat()
+            expires_at = (datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds)).isoformat()
         # payload_hash — хеш параметров предложения, вычисляется при создании
         # и сверяется при подтверждении (защита от подмены параметров между
         # созданием и подтверждением).
         payload_hash = hashlib.sha256(
-            json.dumps(parameters, sort_keys=True, ensure_ascii=False).encode(
-                "utf-8"
-            )
+            json.dumps(parameters, sort_keys=True, ensure_ascii=False).encode("utf-8")
         ).hexdigest()
         conn = self.state.connect()
         conn.execute(
@@ -140,9 +136,7 @@ class PendingManager:
 
     # ---- Подтверждение и применение ----
 
-    def confirm_change(
-        self, change_id: str, revision: int, confirmed_by: str = "user"
-    ) -> bool:
+    def confirm_change(self, change_id: str, revision: int, confirmed_by: str = "user") -> bool:
         """Подтверждает и применяет pending-запрос с оптимистичной блокировкой.
 
         Проверка ``status = 'pending'``, совпадения ``revision`` и
@@ -167,9 +161,7 @@ class PendingManager:
             change = dict(row)
             if change["status"] != "pending":
                 conn.rollback()
-                logger.warning(
-                    "Pending-запрос %s уже в статусе %s", change_id, change["status"]
-                )
+                logger.warning("Pending-запрос %s уже в статусе %s", change_id, change["status"])
                 return False
             # Проверка TTL (expires_at)
             if change.get("expires_at"):
@@ -197,16 +189,14 @@ class PendingManager:
             # созданием предложения и его подтверждением.
             parameters = json.loads(change["parameters"] or "{}")
             current_hash = hashlib.sha256(
-                json.dumps(parameters, sort_keys=True, ensure_ascii=False).encode(
-                    "utf-8"
-                )
+                json.dumps(parameters, sort_keys=True, ensure_ascii=False).encode("utf-8")
             ).hexdigest()
             stored_hash = change["content_hash"] or ""
             if stored_hash and current_hash != stored_hash:
                 conn.rollback()
                 logger.warning(
-                    "Конфликт payload_hash для %s: параметры изменены после "
-                    "создания предложения", change_id
+                    "Конфликт payload_hash для %s: параметры изменены после создания предложения",
+                    change_id,
                 )
                 return False
 
@@ -214,9 +204,7 @@ class PendingManager:
 
             now = datetime.now(timezone.utc).isoformat()
             content_hash = hashlib.sha256(
-                json.dumps(parameters, sort_keys=True, ensure_ascii=False).encode(
-                    "utf-8"
-                )
+                json.dumps(parameters, sort_keys=True, ensure_ascii=False).encode("utf-8")
             ).hexdigest()
 
             if success:
@@ -318,13 +306,17 @@ class PendingManager:
                 )
                 if new_id is None:
                     return self._apply_failed(
-                        change, c, own,
+                        change,
+                        c,
+                        own,
                         f"Источник {parameters['source_id']} уже существует",
                     )
             elif action == "remove_source":
                 if not self.state.remove_source(parameters["source_id"], conn=c):
                     return self._apply_failed(
-                        change, c, own,
+                        change,
+                        c,
+                        own,
                         f"Источник {parameters['source_id']} не найден",
                     )
             elif action == "enable_source":
@@ -334,7 +326,9 @@ class PendingManager:
                     conn=c,
                 ):
                     return self._apply_failed(
-                        change, c, own,
+                        change,
+                        c,
+                        own,
                         f"Источник {parameters['source_id']} не найден",
                     )
             elif action == "update_profile":
@@ -393,9 +387,7 @@ class PendingManager:
         self._save_result(change["change_id"], result, conn=c)
         if own:
             c.rollback()
-        logger.error(
-            "Pending-запрос %s не применён: %s", change["change_id"], error
-        )
+        logger.error("Pending-запрос %s не применён: %s", change["change_id"], error)
         return False
 
     def _save_result(
@@ -434,9 +426,7 @@ class PendingManager:
         )
         logger.info("Профиль обновлён: %s", profile_path)
 
-    def _revert_prompt(
-        self, parameters: dict, conn: sqlite3.Connection | None = None
-    ) -> None:
+    def _revert_prompt(self, parameters: dict, conn: sqlite3.Connection | None = None) -> None:
         """Откатывает промпт к указанной (или предыдущей) версии."""
         c = conn or self.state.connect()
         own = conn is None

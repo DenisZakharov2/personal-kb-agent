@@ -68,9 +68,7 @@ class TestStateIndexNoteDedup:
         count = state.rebuild_fts()
         assert count == 2
 
-        rows = conn.execute(
-            "SELECT COUNT(*) AS cnt FROM notes_fts"
-        ).fetchone()
+        rows = conn.execute("SELECT COUNT(*) AS cnt FROM notes_fts").fetchone()
         assert rows["cnt"] == 2
 
     def test_revision_increments_on_reindex(self, config, state):

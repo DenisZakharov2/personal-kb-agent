@@ -305,9 +305,7 @@ def self_improve_apply_prompt(
             reason=proposal["reason"],
             status=proposal["status"],
         )
-        ok = engine.apply_prompt_proposal(
-            proposal_obj, new_content, confirmed_by=confirmed_by
-        )
+        ok = engine.apply_prompt_proposal(proposal_obj, new_content, confirmed_by=confirmed_by)
 
         if json_output:
             _output_json(
@@ -343,9 +341,7 @@ def self_improve_apply_prompt(
 @app.command("reject")
 def self_improve_reject(
     proposal_id: str = typer.Argument(..., help="ID предложения"),
-    reason: str = typer.Option(
-        "", "--reason", "-r", help="Причина отклонения предложения"
-    ),
+    reason: str = typer.Option("", "--reason", "-r", help="Причина отклонения предложения"),
     json_output: bool = typer.Option(
         False,
         "--json",
@@ -485,9 +481,7 @@ def self_improve_apply_config(
             reason=proposal_row["reason"],
             status=proposal_row["status"],
         )
-        ok = engine.apply_config_proposal(
-            proposal_obj, new_value, confirmed_by=confirmed_by
-        )
+        ok = engine.apply_config_proposal(proposal_obj, new_value, confirmed_by=confirmed_by)
 
         if json_output:
             _output_json(

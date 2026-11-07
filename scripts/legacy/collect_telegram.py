@@ -32,9 +32,19 @@ HEADERS = {
 }
 
 SPAM_KEYWORDS = [
-    "розыгрыш", "giveaway", "подпишись на канал", "подписаться на",
-    "реклама", "вложения", "заработай", "инвестируй", "купи",
-    "промокод", "скидка", "розыгрыш приза", "бесплатный розыгрыш",
+    "розыгрыш",
+    "giveaway",
+    "подпишись на канал",
+    "подписаться на",
+    "реклама",
+    "вложения",
+    "заработай",
+    "инвестируй",
+    "купи",
+    "промокод",
+    "скидка",
+    "розыгрыш приза",
+    "бесплатный розыгрыш",
 ]
 
 
@@ -107,14 +117,16 @@ def fetch_channel_posts(channel: str, limit: int) -> list[dict]:
         if not message_id:
             continue
 
-        posts.append({
-            "channel": channel,
-            "message_id": message_id,
-            "date": date,
-            "link": link,
-            "text": text,
-            "is_spam": is_spam(text),
-        })
+        posts.append(
+            {
+                "channel": channel,
+                "message_id": message_id,
+                "date": date,
+                "link": link,
+                "text": text,
+                "is_spam": is_spam(text),
+            }
+        )
     return posts
 
 
@@ -128,7 +140,11 @@ def main() -> int:
 
     def load_set(path: Path) -> set[str]:
         if path.exists():
-            return {line.strip() for line in path.read_text(encoding="utf-8").splitlines() if line.strip()}
+            return {
+                line.strip()
+                for line in path.read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            }
         return set()
 
     def save_set(path: Path, s: set[str]) -> None:

@@ -50,7 +50,6 @@ class TestConfigPaths:
         # Нет персонального пути вроде ~/База знаний (убрали DEFAULT_VAULT_PATH)
         assert str(config.vault_path) != str(Path.home() / "База знаний")
 
-
     def test_dependent_paths_under_data_dir(self):
         """db, sources, profile, log по умолчанию лежат под data_dir."""
         from kb_agent.config import AppConfig
@@ -95,4 +94,3 @@ class TestConfigPaths:
         assert config.log_path == tmp_path / "my.log"
         # Источник и профиль не заданы явно → под data_dir
         assert config.sources_path == tmp_path / "data" / "sources.yaml"
-

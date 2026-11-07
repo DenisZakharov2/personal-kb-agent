@@ -53,7 +53,9 @@ class TestSourceRegistrySqlite:
 
         from kb_agent.sources.base import SourceConfig
 
-        registry1.add(SourceConfig(id="tg_ch123", type="telegram", url="https://t.me/s/ch123", enabled=True))
+        registry1.add(
+            SourceConfig(id="tg_ch123", type="telegram", url="https://t.me/s/ch123", enabled=True)
+        )
 
         sources1 = registry1.list()
         sources2 = registry2.list()
@@ -95,7 +97,9 @@ class TestPendingAffectsCollector:
         """После подтверждения remove_source источника нет в реестре сборщика."""
         registry = SourceRegistry(sources_path=config.sources_path, state=state)
         registry.add(
-            SourceConfig(id="yt_gone", type="youtube", url="https://youtube.com/@gone", enabled=True)
+            SourceConfig(
+                id="yt_gone", type="youtube", url="https://youtube.com/@gone", enabled=True
+            )
         )
 
         pm = PendingManager(state)
@@ -121,6 +125,7 @@ class TestCollectorReadsFromSqliteNotYaml:
         не должен быть виден сборщику."""
         # Пишем источник напрямую в YAML, минуя SQLite
         import yaml
+
         yaml_data = {
             "version": 1,
             "sources": [
@@ -132,9 +137,7 @@ class TestCollectorReadsFromSqliteNotYaml:
                 }
             ],
         }
-        config.sources_path.write_text(
-            yaml.dump(yaml_data, allow_unicode=True), encoding="utf-8"
-        )
+        config.sources_path.write_text(yaml.dump(yaml_data, allow_unicode=True), encoding="utf-8")
 
         manager = SourceManager(config, state)
         ids = {s.id for s in manager.registry.list()}
@@ -161,9 +164,7 @@ class TestCollectorReadsFromSqliteNotYaml:
 
         manager = SourceManager(config, state)
         ids = {s.id for s in manager.registry.list()}
-        assert "tg_sqlite_only" in ids, (
-            f"Источник из SQLite должен быть виден сборщику: {ids}"
-        )
+        assert "tg_sqlite_only" in ids, f"Источник из SQLite должен быть виден сборщику: {ids}"
 
     def test_manager_without_yaml_file_still_works(self, state, config, temp_dir):
         """SourceManager работает даже если sources.yaml отсутствует entirely."""

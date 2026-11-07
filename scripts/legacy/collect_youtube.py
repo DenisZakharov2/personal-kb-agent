@@ -43,6 +43,7 @@ def default_channel_url() -> str:
     single = os.getenv("KB_YT_CHANNEL_URL", "").strip()
     if single:
         import logging
+
         logging.getLogger("collect_youtube").warning(
             "KB_YT_CHANNEL_URL устарел, используйте KB_YOUTUBE_CHANNELS"
         )
@@ -56,7 +57,9 @@ def parse_args() -> argparse.Namespace:
 
     c = sub.add_parser("collect", help="собрать метаданные в очередь")
     c.add_argument("--channel-url", default=default_channel_url())
-    c.add_argument("--months", type=int, default=int(os.getenv("KB_YT_MONTHS", str(DEFAULT_MONTHS))))
+    c.add_argument(
+        "--months", type=int, default=int(os.getenv("KB_YT_MONTHS", str(DEFAULT_MONTHS)))
+    )
 
     t = sub.add_parser("transcripts", help="скачать субтитры для видео в очереди")
     t.add_argument("--limit", type=int, default=int(os.getenv("KB_YT_LIMIT", "0")))
@@ -138,8 +141,11 @@ def read_queue() -> list[dict]:
 
 def fetch_channel_videos(channel_url: str) -> list[dict]:
     cmd = [
-        "yt-dlp", "--skip-download", "--print-json",
-        "--match-filter", "!is_short & duration > 60",
+        "yt-dlp",
+        "--skip-download",
+        "--print-json",
+        "--match-filter",
+        "!is_short & duration > 60",
         channel_url + "/videos",
     ]
     result = subprocess.run(cmd, check=False, capture_output=True, text=True, timeout=300)
@@ -208,9 +214,16 @@ def fetch_transcript(video_id: str, video_url: str, langs: list[str]) -> str | N
     out_tmpl = str(tmp / "%(id)s")
     for lang in langs:
         cmd = [
-            "yt-dlp", "--skip-download", "--write-subs",
-            "--sub-lang", lang, "--sub-format", "json3",
-            "--output", out_tmpl, video_url,
+            "yt-dlp",
+            "--skip-download",
+            "--write-subs",
+            "--sub-lang",
+            lang,
+            "--sub-format",
+            "json3",
+            "--output",
+            out_tmpl,
+            video_url,
         ]
         try:
             result = subprocess.run(cmd, check=False, capture_output=True, text=True, timeout=120)
@@ -218,7 +231,9 @@ def fetch_transcript(video_id: str, video_url: str, langs: list[str]) -> str | N
             continue
         if result.returncode != 0:
             continue
-        candidates = list(tmp.glob(f"{video_id}.{lang}.json3")) + list(tmp.glob(f"{video_id}.*.json3"))
+        candidates = list(tmp.glob(f"{video_id}.{lang}.json3")) + list(
+            tmp.glob(f"{video_id}.*.json3")
+        )
         if not candidates:
             continue
         raw = candidates[0].read_text(encoding="utf-8", errors="replace")
@@ -241,14 +256,16 @@ def cmd_collect(args: argparse.Namespace) -> int:
         vid = v.get("id", "")
         if not vid or vid in done:
             continue
-        new_entries.append({
-            "id": vid,
-            "title": v.get("title", "Без названия"),
-            "description": v.get("description", "") or "",
-            "upload_date": v.get("upload_date", ""),
-            "duration": v.get("duration", 0),
-            "webpage_url": v.get("webpage_url", f"https://youtube.com/watch?v={vid}"),
-        })
+        new_entries.append(
+            {
+                "id": vid,
+                "title": v.get("title", "Без названия"),
+                "description": v.get("description", "") or "",
+                "upload_date": v.get("upload_date", ""),
+                "duration": v.get("duration", 0),
+                "webpage_url": v.get("webpage_url", f"https://youtube.com/watch?v={vid}"),
+            }
+        )
 
     if new_entries:
         append_queue(new_entries)
@@ -263,13 +280,17 @@ def cmd_transcripts(args: argparse.Namespace) -> int:
     load_set(done_path())
     trans_done = load_set(trans_done_path())
     queue = read_queue()
-    langs = [l.strip() for l in os.getenv("KB_YT_SUB_LANGS", DEFAULT_SUB_LANGS).split(",") if l.strip()]
+    langs = [
+        l.strip() for l in os.getenv("KB_YT_SUB_LANGS", DEFAULT_SUB_LANGS).split(",") if l.strip()
+    ]
 
     pending = [e for e in queue if e["id"] not in trans_done]
     if args.limit and args.limit > 0:
         pending = pending[: args.limit]
 
-    print(f"Всего в очереди: {len(queue)}, с субтитрами: {len(trans_done)}, нужно скачать: {len(pending)}")
+    print(
+        f"Всего в очереди: {len(queue)}, с субтитрами: {len(trans_done)}, нужно скачать: {len(pending)}"
+    )
 
     for i, e in enumerate(pending, 1):
         vid = e["id"]
@@ -306,7 +327,9 @@ def cmd_list_queue(args: argparse.Namespace) -> int:
         dur = e.get("duration", 0)
         dur_str = f"{dur // 60}:{dur % 60:02d}" if dur else "?"
         has_sub = "суб+ " if e["id"] in trans_done else "суб- "
-        print(f"  {e['id']} | {dt} | {dur_str} | {has_sub}| {e.get('title','')} | {e.get('webpage_url','')}")
+        print(
+            f"  {e['id']} | {dt} | {dur_str} | {has_sub}| {e.get('title', '')} | {e.get('webpage_url', '')}"
+        )
     return 0
 
 

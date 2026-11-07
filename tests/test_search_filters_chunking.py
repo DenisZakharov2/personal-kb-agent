@@ -108,7 +108,9 @@ class TestChunking:
             assert chunks[i].start < chunks[i - 1].end
 
     def test_search_result_has_snippet_offset(self, config, state):
-        _index_note(state, "n1", "T1", "Тема", "тэг", "tg_chan", "Введение. нейросети здесь. Заключение.")
+        _index_note(
+            state, "n1", "T1", "Тема", "тэг", "tg_chan", "Введение. нейросети здесь. Заключение."
+        )
         engine = SearchEngine(config, state, _make_llm())
         response = engine.search("нейросети", limit=5)
         assert len(response.results) == 1
@@ -123,8 +125,12 @@ class TestValidateSearchAnswer:
         _index_note(state, "n1", "T1", "Тема", "тэг", "tg_chan", "контент")
         results = [
             SearchResult(
-                note_id="n1", title="T1", tags="тэг", topic="Тема",
-                content="контент", score=1.0,
+                note_id="n1",
+                title="T1",
+                tags="тэг",
+                topic="Тема",
+                content="контент",
+                score=1.0,
             )
         ]
         validation = validate_search_answer(
@@ -137,21 +143,24 @@ class TestValidateSearchAnswer:
     def test_invalid_answer_with_fake_citation(self, config, state):
         _index_note(state, "n1", "T1", "Тема", "тэг", "tg_chan", "контент")
         results = [
-            SearchResult(note_id="n1", title="T1", tags="тэг", topic="Тема", content="контент", score=1.0)
+            SearchResult(
+                note_id="n1", title="T1", tags="тэг", topic="Тема", content="контент", score=1.0
+            )
         ]
-        validation = validate_search_answer(
-            "См. вымышленную заметку ID: fake-123", results
-        )
+        validation = validate_search_answer("См. вымышленную заметку ID: fake-123", results)
         assert validation.passed is False
         assert "fake-123" in validation.unknown_citations
 
     def test_invalid_answer_with_forbidden_phrase(self, config, state):
         _index_note(state, "n1", "T1", "Тема", "тэг", "tg_chan", "контент")
         results = [
-            SearchResult(note_id="n1", title="T1", tags="тэг", topic="Тема", content="контент", score=1.0)
+            SearchResult(
+                note_id="n1", title="T1", tags="тэг", topic="Тема", content="контент", score=1.0
+            )
         ]
         validation = validate_search_answer(
-            "Ответ ID: n1. Секретный проект запущен.", results,
+            "Ответ ID: n1. Секретный проект запущен.",
+            results,
             forbidden_phrases=["Секретный проект"],
         )
         assert validation.passed is False

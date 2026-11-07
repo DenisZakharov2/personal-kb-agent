@@ -66,9 +66,7 @@ def merge_command(
             if json_output:
                 _output_json(error)
             else:
-                typer.echo(
-                    f"✗ Ошибка валидации: --keep должен быть 1 или 2, получено: {keep!r}"
-                )
+                typer.echo(f"✗ Ошибка валидации: --keep должен быть 1 или 2, получено: {keep!r}")
             raise typer.Exit(code=1)
 
         keep_note_id = note_id_1 if keep == "1" else note_id_2
@@ -158,8 +156,12 @@ def merge_command(
             _output_json(output)
         else:
             typer.echo("✓ Дубли объединены.")
-            typer.echo(f"  Оставлено:     {keep_note_id} ('{keep_note.get('title') or 'Без названия'}')")
-            typer.echo(f"  Архивировано:  {drop_note_id} ('{drop_note.get('title') or 'Без названия'}')")
+            typer.echo(
+                f"  Оставлено:     {keep_note_id} ('{keep_note.get('title') or 'Без названия'}')"
+            )
+            typer.echo(
+                f"  Архивировано:  {drop_note_id} ('{drop_note.get('title') or 'Без названия'}')"
+            )
             typer.echo(f"  Перенесено связей: {result['links_moved']}")
             typer.echo(f"  Удалено из FTS: {result['fts_entries_removed']}")
             if result["raw_content_moved"]:

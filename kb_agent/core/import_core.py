@@ -115,9 +115,11 @@ class CoreImporter:
                 raw_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
 
                 # Проверяем, не импортирован ли уже (по raw_hash в raw_queue)
-                existing = self.state.connect().execute(
-                    "SELECT 1 FROM raw_queue WHERE raw_hash = ?", (raw_hash,)
-                ).fetchone()
+                existing = (
+                    self.state.connect()
+                    .execute("SELECT 1 FROM raw_queue WHERE raw_hash = ?", (raw_hash,))
+                    .fetchone()
+                )
                 if existing:
                     report.skipped += 1
                     report.details.append(f"Уже импортировано (пропуск): {f}")

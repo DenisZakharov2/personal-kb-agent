@@ -17,7 +17,9 @@ from kb_agent.storage.vault import VaultManager
 merge_mod = None  # импортируется в фикстуре ниже для monkeypatch load_config
 
 
-def _seed_note(state, note_id, title, tags="тэг1", topic="Тест", content="", source_id="src", external_id="ext"):
+def _seed_note(
+    state, note_id, title, tags="тэг1", topic="Тест", content="", source_id="src", external_id="ext"
+):
     state.index_note(
         note_id=note_id,
         title=title,
@@ -86,8 +88,7 @@ class TestMergeCommand:
         assert ("note-keep", "note-third", "references") in pairs
         assert ("note-third", "note-keep", "references") in pairs
         assert all(
-            r["source_note_id"] != "note-drop" and r["target_note_id"] != "note-drop"
-            for r in rows
+            r["source_note_id"] != "note-drop" and r["target_note_id"] != "note-drop" for r in rows
         )
 
         # Дубль удалён из FTS — обычный поиск его не находит.
@@ -102,7 +103,8 @@ class TestMergeCommand:
 
         runner = CliRunner()
         result = runner.invoke(
-            app, ["merge", "note-keep", "note-drop", "--keep", "2", "--json"],
+            app,
+            ["merge", "note-keep", "note-drop", "--keep", "2", "--json"],
             prog_name="kb-agent",
         )
         assert result.exit_code == 0, result.output
@@ -120,7 +122,8 @@ class TestMergeCommand:
 
         runner = CliRunner()
         result = runner.invoke(
-            app, ["merge", "note-keep", "note-drop", "--keep", "1", "--dry-run", "--json"],
+            app,
+            ["merge", "note-keep", "note-drop", "--keep", "1", "--dry-run", "--json"],
             prog_name="kb-agent",
         )
         assert result.exit_code == 0, result.output
@@ -131,9 +134,13 @@ class TestMergeCommand:
         # В БД и файлах ничего не изменилось.
         assert state.get_note("note-drop")["is_archived"] == 0
         assert state.get_raw_content("note-drop") is not None or True  # без изменений
-        rows = state.connect().execute(
-            "SELECT COUNT(*) AS c FROM note_links WHERE source_note_id = 'note-drop' OR target_note_id = 'note-drop'"
-        ).fetchone()
+        rows = (
+            state.connect()
+            .execute(
+                "SELECT COUNT(*) AS c FROM note_links WHERE source_note_id = 'note-drop' OR target_note_id = 'note-drop'"
+            )
+            .fetchone()
+        )
         assert rows["c"] == 1
 
     def test_nonexistent_note_id_fails(self, config, state, monkeypatch):
@@ -142,13 +149,15 @@ class TestMergeCommand:
 
         runner = CliRunner()
         result = runner.invoke(
-            app, ["merge", "note-keep", "note-missing", "--keep", "1"],
+            app,
+            ["merge", "note-keep", "note-missing", "--keep", "1"],
             prog_name="kb-agent",
         )
         assert result.exit_code != 0
 
         result2 = runner.invoke(
-            app, ["merge", "note-missing", "note-keep", "--keep", "2"],
+            app,
+            ["merge", "note-missing", "note-keep", "--keep", "2"],
             prog_name="kb-agent",
         )
         assert result2.exit_code != 0
@@ -159,13 +168,15 @@ class TestMergeCommand:
 
         runner = CliRunner()
         result = runner.invoke(
-            app, ["merge", "note-keep", "note-keep", "--keep", "1"],
+            app,
+            ["merge", "note-keep", "note-keep", "--keep", "1"],
             prog_name="kb-agent",
         )
         assert result.exit_code != 0
 
         result2 = runner.invoke(
-            app, ["merge", "note-keep", "note-keep", "--keep", "2"],
+            app,
+            ["merge", "note-keep", "note-keep", "--keep", "2"],
             prog_name="kb-agent",
         )
         assert result2.exit_code != 0
@@ -177,7 +188,8 @@ class TestMergeCommand:
 
         runner = CliRunner()
         result = runner.invoke(
-            app, ["merge", "note-keep", "note-drop", "--keep", "3"],
+            app,
+            ["merge", "note-keep", "note-drop", "--keep", "3"],
             prog_name="kb-agent",
         )
         assert result.exit_code != 0
@@ -190,7 +202,8 @@ class TestMergeCommand:
 
         runner = CliRunner()
         result = runner.invoke(
-            app, ["merge", "note-keep", "note-drop", "--keep", "1", "--json"],
+            app,
+            ["merge", "note-keep", "note-drop", "--keep", "1", "--json"],
             prog_name="kb-agent",
         )
         assert result.exit_code == 0, result.output
@@ -211,7 +224,8 @@ class TestMergeCommand:
 
         runner = CliRunner()
         result = runner.invoke(
-            app, ["merge", "note-keep", "note-drop", "--keep", "1", "--json"],
+            app,
+            ["merge", "note-keep", "note-drop", "--keep", "1", "--json"],
             prog_name="kb-agent",
         )
         assert result.exit_code == 0, result.output
@@ -226,7 +240,8 @@ class TestMergeCommand:
 
         runner = CliRunner()
         result = runner.invoke(
-            app, ["merge", "note-keep", "note-drop", "--keep", "1", "--json"],
+            app,
+            ["merge", "note-keep", "note-drop", "--keep", "1", "--json"],
             prog_name="kb-agent",
         )
         assert result.exit_code == 0, result.output
@@ -256,7 +271,8 @@ class TestMergeCommand:
 
         runner = CliRunner()
         result = runner.invoke(
-            app, ["merge", "note-keep", "note-drop", "--keep", "1", "--json"],
+            app,
+            ["merge", "note-keep", "note-drop", "--keep", "1", "--json"],
             prog_name="kb-agent",
         )
         assert result.exit_code == 0, result.output
@@ -280,12 +296,14 @@ class TestMergeCommand:
 
         runner = CliRunner()
         r1 = runner.invoke(
-            app, ["merge", "note-keep", "note-drop", "--keep", "1", "--json"],
+            app,
+            ["merge", "note-keep", "note-drop", "--keep", "1", "--json"],
             prog_name="kb-agent",
         )
         assert r1.exit_code == 0, r1.output
         r2 = runner.invoke(
-            app, ["merge", "note-keep", "note-drop", "--keep", "1", "--json"],
+            app,
+            ["merge", "note-keep", "note-drop", "--keep", "1", "--json"],
             prog_name="kb-agent",
         )
         assert r2.exit_code == 0, r2.output

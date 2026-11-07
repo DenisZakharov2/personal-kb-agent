@@ -167,9 +167,7 @@ class SourceRegistry:
         """
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_name(path.name + ".tmp")
-        tmp.write_text(
-            yaml.dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8"
-        )
+        tmp.write_text(yaml.dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8")
         os.replace(tmp, path)
 
     def save(self) -> None:
@@ -365,9 +363,7 @@ def _sources_from_config(config: AppConfig) -> list[SourceConfig]:
             continue
         channel = name if name.startswith("http") else f"https://t.me/s/{name}"
         slug = channel.rstrip("/").split("/")[-1].replace("@", "")
-        result.append(
-            SourceConfig(id=f"tg_{slug}", type="telegram", url=channel, enabled=True)
-        )
+        result.append(SourceConfig(id=f"tg_{slug}", type="telegram", url=channel, enabled=True))
 
     for url in (config.youtube_channels or "").split(","):
         url = url.strip()

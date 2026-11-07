@@ -61,9 +61,10 @@ ALLOWED_SOURCE_HOSTS = {
     "www.youtu.be",
 }
 
+
 def _is_source_url_allowed(url: str) -> bool:
     """Проверяет, что хост URL входит в allowlist источников (6.1).
-    
+
     Используется ТОЛЬКО для валидации при добавлении нового источника через MCP.
     НЕ используется для определения доверия к контенту заметки.
     """
@@ -175,6 +176,7 @@ class InsightOutput(BaseModel):
 
 class InsightsListOutput(BaseModel):
     """Обертка для списка инсайтов в outputSchema kb_get_insights."""
+
     insights: list[InsightOutput]
 
 
@@ -236,7 +238,9 @@ _WRITE_ANNOTATIONS = ToolAnnotations(
 )
 
 
-def _read_only_tool(name: str, description: str, input_schema: dict, output_schema: dict | None = None) -> Tool:
+def _read_only_tool(
+    name: str, description: str, input_schema: dict, output_schema: dict | None = None
+) -> Tool:
     return Tool(
         name=name,
         description=description,
@@ -321,8 +325,15 @@ _LIST_TOOLS: list[Tool] = [
             "type": "object",
             "properties": {
                 "source_type": _SOURCE_TYPE_ENUM,
-                "channel": {"type": "string", "description": "Идентификатор канала (например, rubiconzone или @amorev)"},
-                "enabled": {"type": "boolean", "description": "Активен ли источник сразу", "default": True},
+                "channel": {
+                    "type": "string",
+                    "description": "Идентификатор канала (например, rubiconzone или @amorev)",
+                },
+                "enabled": {
+                    "type": "boolean",
+                    "description": "Активен ли источник сразу",
+                    "default": True,
+                },
             },
             "required": ["source_type", "channel"],
             "additionalProperties": False,
@@ -334,7 +345,10 @@ _LIST_TOOLS: list[Tool] = [
         {
             "type": "object",
             "properties": {
-                "source_id": {"type": "string", "description": "Идентификатор источника (например, tg_rubiconzone)"},
+                "source_id": {
+                    "type": "string",
+                    "description": "Идентификатор источника (например, tg_rubiconzone)",
+                },
             },
             "required": ["source_id"],
             "additionalProperties": False,
@@ -374,8 +388,14 @@ _LIST_TOOLS: list[Tool] = [
         {
             "type": "object",
             "properties": {
-                "prompt_name": {"type": "string", "description": "Имя промпта (например, agent_prompt)"},
-                "version": {"type": "integer", "description": "Версия для отката (по умолчанию — предыдущая перед текущей)"},
+                "prompt_name": {
+                    "type": "string",
+                    "description": "Имя промпта (например, agent_prompt)",
+                },
+                "version": {
+                    "type": "integer",
+                    "description": "Версия для отката (по умолчанию — предыдущая перед текущей)",
+                },
             },
             "required": ["prompt_name"],
             "additionalProperties": False,
@@ -499,9 +519,17 @@ async def handle_call_tool(name: str, arguments: dict[str, Any] | None) -> Any:
 
             next_cursor = cursor + limit if has_more else None
             # total — приблизительное, т.к. мы не делаем COUNT(*) для производительности.
-            search_output = SearchOutput(items=items, next_cursor=next_cursor, total=cursor + len(items) + (1 if has_more else 0))
+            search_output = SearchOutput(
+                items=items,
+                next_cursor=next_cursor,
+                total=cursor + len(items) + (1 if has_more else 0),
+            )
 
-            lines = [f"## Результаты поиска: {query}", f"Найдено: {len(items)} (показано с {cursor})", ""]
+            lines = [
+                f"## Результаты поиска: {query}",
+                f"Найдено: {len(items)} (показано с {cursor})",
+                "",
+            ]
             for it in items:
                 prov_parts = []
                 if it.source_id:
@@ -517,14 +545,18 @@ async def handle_call_tool(name: str, arguments: dict[str, Any] | None) -> Any:
                 if it.content_hash:
                     prov_parts.append(f"hash={it.content_hash[:12]}")
                 prov_text = f" [{', '.join(prov_parts)}]" if prov_parts else ""
-                lines.append(f"- **{it.title}** (ID: {it.note_id}, теги: {', '.join(it.tags)}, тема: {it.topic}, score: {it.score:.2f}{prov_text})")
+                lines.append(
+                    f"- **{it.title}** (ID: {it.note_id}, теги: {', '.join(it.tags)}, тема: {it.topic}, score: {it.score:.2f}{prov_text})"
+                )
                 snippet = " ".join((it.snippet or "").split())[:300]
                 if snippet:
                     lines.append(f"  > {snippet}")
                 preview = (it.content_preview or "").strip()
                 if preview:
                     lines.append(f"  Содержимое: {preview}")
-            result_text = "\n".join(lines) if lines else "В базе недостаточно данных по вашему запросу."
+            result_text = (
+                "\n".join(lines) if lines else "В базе недостаточно данных по вашему запросу."
+            )
 
             # Возвращаем и текст, и структурированный контент (кортеж).
             return [TextContent(type="text", text=result_text)], search_output.model_dump()
@@ -682,9 +714,7 @@ async def handle_call_tool(name: str, arguments: dict[str, Any] | None) -> Any:
                 return _error_result("invalid_argument", "Поле 'proposal_id' обязательно")
             row = state.get_proposal(proposal_id)
             if row is None:
-                return _error_result(
-                    "not_found", f"Предложение с ID {proposal_id} не найдено"
-                )
+                return _error_result("not_found", f"Предложение с ID {proposal_id} не найдено")
             output = {
                 "proposal_id": row["proposal_id"],
                 "target": row["target"],
@@ -739,7 +769,12 @@ async def handle_call_tool(name: str, arguments: dict[str, Any] | None) -> Any:
                 action="add_source",
                 entity_type="source",
                 entity_id=source_id,
-                parameters={"source_id": source_id, "source_type": source_type, "channel": channel, "enabled": enabled},
+                parameters={
+                    "source_id": source_id,
+                    "source_type": source_type,
+                    "channel": channel,
+                    "enabled": enabled,
+                },
             )
             lines = [
                 "## Pending-запрос на добавление источника",
@@ -759,7 +794,9 @@ async def handle_call_tool(name: str, arguments: dict[str, Any] | None) -> Any:
                 return _error_result("invalid_argument", "Поле 'source_id' обязательно")
             pm = PendingManager(state, config)
             change_id = pm.create_change(
-                action="remove_source", entity_type="source", entity_id=source_id,
+                action="remove_source",
+                entity_type="source",
+                entity_id=source_id,
                 parameters={"source_id": source_id},
             )
             lines = [
@@ -801,7 +838,9 @@ async def handle_call_tool(name: str, arguments: dict[str, Any] | None) -> Any:
                 return _error_result("invalid_argument", "Поле 'updates' должно быть объектом.")
             pm = PendingManager(state, config)
             change_id = pm.create_change(
-                action="update_profile", entity_type="profile", entity_id="user",
+                action="update_profile",
+                entity_type="profile",
+                entity_id="user",
                 parameters={"updates": updates},
             )
             lines = [
@@ -821,7 +860,9 @@ async def handle_call_tool(name: str, arguments: dict[str, Any] | None) -> Any:
                 return _error_result("invalid_argument", "Поле 'prompt_name' обязательно")
             pm = PendingManager(state, config)
             change_id = pm.create_change(
-                action="revert_prompt", entity_type="prompt", entity_id=prompt_name,
+                action="revert_prompt",
+                entity_type="prompt",
+                entity_id=prompt_name,
                 parameters={"prompt_name": prompt_name, "version": version},
             )
             lines = [

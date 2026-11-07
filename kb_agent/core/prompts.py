@@ -46,9 +46,9 @@ def answer_prompt_path(config: AppConfig) -> Path:
 
 # Тип задачи для каждого промпта: определяет, для каких генераций он используется.
 PROMPT_TYPES = {
-    DEFAULT_PROMPT_NAME: "search",      # ответы на вопросы (kb ask / kb_search)
-    SUMMARIZE_PROMPT_NAME: "summarize", # суммаризация сырого материала в заметку
-    ANSWER_PROMPT_NAME: "answer",       # ответы на вопросы (альтернативное имя)
+    DEFAULT_PROMPT_NAME: "search",  # ответы на вопросы (kb ask / kb_search)
+    SUMMARIZE_PROMPT_NAME: "summarize",  # суммаризация сырого материала в заметку
+    ANSWER_PROMPT_NAME: "answer",  # ответы на вопросы (альтернативное имя)
 }
 
 
@@ -112,7 +112,9 @@ def ensure_prompt_seeded(config: AppConfig, state: StateManager) -> dict | None:
     return seeded
 
 
-def get_active_system_prompt(state: StateManager, prompt_name: str = DEFAULT_PROMPT_NAME) -> str | None:
+def get_active_system_prompt(
+    state: StateManager, prompt_name: str = DEFAULT_PROMPT_NAME
+) -> str | None:
     """Содержимое активной версии промпта ``prompt_name`` или None.
 
     По умолчанию возвращает ``agent_prompt`` (ответы на вопросы). Для суммаризации

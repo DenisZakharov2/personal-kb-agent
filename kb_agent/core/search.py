@@ -279,9 +279,7 @@ class SearchEngine:
         response.enough_data = True
 
         # Метаданные генерации ответа (prompt_type = search).
-        active_prompt = self.state.get_active_prompt(
-            DEFAULT_PROMPT_NAME, prompt_type="search"
-        )
+        active_prompt = self.state.get_active_prompt(DEFAULT_PROMPT_NAME, prompt_type="search")
         self.state.save_generation_log(
             note_id=None,
             operation="answer",
@@ -362,9 +360,7 @@ def validate_search_answer(
     if not cited and known_ids:
         reason_parts.append("нет цитат из найденных заметок")
 
-    passed = bool(
-        not unknown and not found_forbidden and (cited or not known_ids)
-    )
+    passed = bool(not unknown and not found_forbidden and (cited or not known_ids))
     return SearchAnswerValidation(
         passed=passed,
         cited_note_ids=[cid for cid in cited if cid in known_ids],

@@ -84,18 +84,14 @@ class TestSelfImproveList:
 
     def test_list_invalid_status(self, config, state, monkeypatch):
         """Недопустимый статус — код 1 с ошибкой."""
-        result = _invoke(
-            config, monkeypatch, ["self-improve", "list", "--status", "bogus"]
-        )
+        result = _invoke(config, monkeypatch, ["self-improve", "list", "--status", "bogus"])
         assert result.exit_code == 1, result.output
         data = _parse(result)
         assert "error" in data
 
     def test_list_text_mode(self, config, state, monkeypatch):
         """Текстовый режим (без --json) работает и код 0."""
-        result = _invoke(
-            config, monkeypatch, ["self-improve", "list"], json_output=False
-        )
+        result = _invoke(config, monkeypatch, ["self-improve", "list"], json_output=False)
         assert result.exit_code == 0, result.output
         assert "Предложений со статусом 'proposed' нет." in result.output
 
@@ -108,7 +104,13 @@ class TestSelfImproveProposePrompt:
         result = _invoke(
             config,
             monkeypatch,
-            ["self-improve", "propose-prompt", "agent_prompt", "нужна ясность", "новый текст промпта"],
+            [
+                "self-improve",
+                "propose-prompt",
+                "agent_prompt",
+                "нужна ясность",
+                "новый текст промпта",
+            ],
         )
         assert result.exit_code == 0, result.output
         data = _parse(result)
@@ -209,9 +211,7 @@ class TestSelfImproveReject:
 
     def test_reject_not_found(self, config, state, monkeypatch):
         """Неверный ID — код 1."""
-        result = _invoke(
-            config, monkeypatch, ["self-improve", "reject", "несуществующий-id"]
-        )
+        result = _invoke(config, monkeypatch, ["self-improve", "reject", "несуществующий-id"])
         assert result.exit_code == 1, result.output
         data = _parse(result)
         assert "error" in data

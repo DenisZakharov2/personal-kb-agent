@@ -94,9 +94,7 @@ def feedback_tell(
         if json_output:
             _output_json(result)
         else:
-            typer.echo(
-                f"✓ Сообщение обратной связи сохранено (ID отзыва: {feedback_id})."
-            )
+            typer.echo(f"✓ Сообщение обратной связи сохранено (ID отзыва: {feedback_id}).")
             typer.echo(f"  Текст: {message}")
     finally:
         state.close()
@@ -150,7 +148,9 @@ def feedback_metrics(
                 typer.echo("Последние отзывы:")
                 for item in recent:
                     prefix = "оценка" if item["score"] and item["score"] > 0 else "сообщение"
-                    score_text = f" ({item['score']}/5)" if item["score"] and item["score"] > 0 else ""
+                    score_text = (
+                        f" ({item['score']}/5)" if item["score"] and item["score"] > 0 else ""
+                    )
                     typer.echo(
                         f"  [{item['created_at']}] {prefix}{score_text}: {item['comment'] or item.get('note_id', '')}"
                     )

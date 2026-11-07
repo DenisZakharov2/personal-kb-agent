@@ -92,7 +92,9 @@ class TestImportCommand:
         found = state.search("идемпотентности", limit=5)
         assert len(found) == 1
 
-    def test_import_updates_existing_note_on_source_change(self, config, state, temp_dir, monkeypatch):
+    def test_import_updates_existing_note_on_source_change(
+        self, config, state, temp_dir, monkeypatch
+    ):
         monkeypatch.setattr("kb_agent.cli.commands.import_cmd.load_config", lambda: config)
         src = temp_dir / "src"
         src.mkdir()
@@ -134,16 +136,22 @@ class TestImportCommand:
         assert data["updated"] == 1
         assert data["imported"] == 0
 
-        notes = state.connect().execute(
-            "SELECT note_id, revision FROM notes WHERE external_id = ?", ("ext_update",)
-        ).fetchall()
+        notes = (
+            state.connect()
+            .execute("SELECT note_id, revision FROM notes WHERE external_id = ?", ("ext_update",))
+            .fetchall()
+        )
         assert len(notes) == 1
         assert notes[0]["revision"] == 2
 
         # FTS не дублируется
-        fts_rows = state.connect().execute(
-            "SELECT COUNT(*) AS c FROM notes_fts WHERE note_id = ?", (notes[0]["note_id"],)
-        ).fetchone()
+        fts_rows = (
+            state.connect()
+            .execute(
+                "SELECT COUNT(*) AS c FROM notes_fts WHERE note_id = ?", (notes[0]["note_id"],)
+            )
+            .fetchone()
+        )
         assert fts_rows["c"] == 1
 
     def test_import_dry_run_does_not_write(self, config, state, temp_dir, monkeypatch):

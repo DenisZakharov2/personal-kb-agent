@@ -95,8 +95,8 @@ def read_resource_text(package: str, resource_name: str) -> str | None:
     внутри установленного wheel (importlib.resources).
     """
     try:
-        return importlib_resources.files(package).joinpath(resource_name).read_text(
-            encoding="utf-8"
+        return (
+            importlib_resources.files(package).joinpath(resource_name).read_text(encoding="utf-8")
         )
     except (FileNotFoundError, ModuleNotFoundError, ImportError, TypeError, OSError):
         return None
@@ -116,7 +116,8 @@ class AppConfig(BaseModel):
         default=None, description="Путь к sources.yaml (по умолчанию data_dir/sources.yaml)"
     )
     profile_path: Path | None = Field(
-        default=None, description="Путь к user_profile.yaml (по умолчанию data_dir/user_profile.yaml)"
+        default=None,
+        description="Путь к user_profile.yaml (по умолчанию data_dir/user_profile.yaml)",
     )
     log_path: Path | None = Field(
         default=None, description="Путь к лог-файлу (по умолчанию data_dir/kb_agent.log)"
@@ -125,10 +126,13 @@ class AppConfig(BaseModel):
 
     # LLM
     llm_provider: str = Field(
-        default="openai", description="Провайдер: openai, kimi, anthropic, ollama, openrouter, custom"
+        default="openai",
+        description="Провайдер: openai, kimi, anthropic, ollama, openrouter, custom",
     )
     openai_api_key: str | None = Field(default=None, description="API-ключ LLM-провайдера")
-    openai_base_url: str = Field(default="https://api.openai.com/v1", description="Базовый URL API провайдера")
+    openai_base_url: str = Field(
+        default="https://api.openai.com/v1", description="Базовый URL API провайдера"
+    )
     openai_model: str = Field(default="gpt-4o-mini", description="Модель LLM")
     openai_temperature: float = Field(default=0.3, description="Температура модели")
     openai_max_tokens: int = Field(default=2000, description="Максимум токенов в ответе")

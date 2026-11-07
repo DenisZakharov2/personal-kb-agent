@@ -76,8 +76,12 @@ def process_run(
             coll = result["collection"]
             tg = coll["telegram"]
             yt = coll["youtube"]
-            typer.echo(f"Telegram: новых {tg['new']}, спама {tg['spam']}, уже было {tg['existing']}")
-            typer.echo(f"YouTube: новых {yt['new']}, пропущено {yt['skipped']}, с субтитрами {yt['with_subtitles']}")
+            typer.echo(
+                f"Telegram: новых {tg['new']}, спама {tg['spam']}, уже было {tg['existing']}"
+            )
+            typer.echo(
+                f"YouTube: новых {yt['new']}, пропущено {yt['skipped']}, с субтитрами {yt['with_subtitles']}"
+            )
             proc = result["processing"]
             typer.echo(f"Обработано в очереди: {proc['processed']}")
             typer.echo(f"Создано заметок: {proc['created']}")
@@ -124,9 +128,7 @@ def process_run(
                     else:
                         typer.echo(f"  - {err}", err=True)
             if processing_failed:
-                typer.echo(
-                    f"Ошибок обработки очереди: {processing_failed}", err=True
-                )
+                typer.echo(f"Ошибок обработки очереди: {processing_failed}", err=True)
 
         if has_errors:
             raise typer.Exit(code=1)
@@ -198,9 +200,9 @@ def process_reindex(
         seen_note_ids: list[str] = []
         for path in sorted(vault.list_notes()):
             parsed = vault.parse_note(path)
-            note_id = parsed["note_id"] or hashlib.sha256(
-                str(path).encode("utf-8")
-            ).hexdigest()[:16]
+            note_id = (
+                parsed["note_id"] or hashlib.sha256(str(path).encode("utf-8")).hexdigest()[:16]
+            )
             state.index_note(
                 note_id=note_id,
                 title=parsed["title"],
@@ -290,8 +292,7 @@ def process_doctor(
                 )
 
         fts_ids = {
-            row["note_id"]
-            for row in conn.execute("SELECT note_id FROM notes_fts").fetchall()
+            row["note_id"] for row in conn.execute("SELECT note_id FROM notes_fts").fetchall()
         }
         for note_id, path in file_note_ids.items():
             if note_id not in fts_ids:
@@ -437,9 +438,7 @@ def process_doctor(
             else:
                 for s in sources_health:
                     status = "✓ включён" if s["enabled"] else "✗ выключен"
-                    typer.echo(
-                        f"  {s['source_id']} | {s['source_type']} | {s['url']} | {status}"
-                    )
+                    typer.echo(f"  {s['source_id']} | {s['source_type']} | {s['url']} | {status}")
                     if s["last_checked"]:
                         typer.echo(f"    Последняя проверка: {s['last_checked']}")
                     if s["last_updated"]:
@@ -625,8 +624,7 @@ def process_reconcile(
                 vault_note_ids[note_id] = path
 
         notes_note_ids = {
-            row["note_id"]
-            for row in conn.execute("SELECT note_id FROM notes").fetchall()
+            row["note_id"] for row in conn.execute("SELECT note_id FROM notes").fetchall()
         }
 
         for note_id, path in sorted(vault_note_ids.items()):
@@ -666,20 +664,24 @@ def process_reconcile(
                             (queue_item["id"],),
                         )
                         conn.commit()
-                        fixed.append({
-                            "kind": "orphan_indexed",
-                            "note_id": note_id,
-                            "queue_id": queue_item["id"],
-                            "detail": "файл проиндексирован, очередь помечена processed",
-                        })
+                        fixed.append(
+                            {
+                                "kind": "orphan_indexed",
+                                "note_id": note_id,
+                                "queue_id": queue_item["id"],
+                                "detail": "файл проиндексирован, очередь помечена processed",
+                            }
+                        )
 
         # 2. Записи в notes без файла в vault
         for note_id in sorted(notes_note_ids - set(vault_note_ids.keys())):
-            issues.append({
-                "kind": "missing_vault_file",
-                "note_id": note_id,
-                "detail": "запись в notes без файла в vault",
-            })
+            issues.append(
+                {
+                    "kind": "missing_vault_file",
+                    "note_id": note_id,
+                    "detail": "запись в notes без файла в vault",
+                }
+            )
 
         # 3. Элементы raw_queue в failed без next_retry_at (неповторимые)
         stuck_failed = conn.execute(
@@ -691,14 +693,16 @@ def process_reconcile(
             """
         ).fetchall()
         for row in stuck_failed:
-            issues.append({
-                "kind": "failed_no_retry",
-                "queue_id": row["id"],
-                "source_id": row["source_id"],
-                "external_id": row["external_id"],
-                "title": row["title"],
-                "detail": f"ошибка: {row['last_error']}, попыток: {row['attempts']}",
-            })
+            issues.append(
+                {
+                    "kind": "failed_no_retry",
+                    "queue_id": row["id"],
+                    "source_id": row["source_id"],
+                    "external_id": row["external_id"],
+                    "title": row["title"],
+                    "detail": f"ошибка: {row['last_error']}, попыток: {row['attempts']}",
+                }
+            )
 
         # 4. Элементы raw_queue в processing с истёкшим lease
         now = datetime.now(timezone.utc).isoformat()
@@ -713,14 +717,16 @@ def process_reconcile(
             (now,),
         ).fetchall()
         for row in stuck_processing:
-            issues.append({
-                "kind": "stuck_processing",
-                "queue_id": row["id"],
-                "source_id": row["source_id"],
-                "external_id": row["external_id"],
-                "title": row["title"],
-                "detail": f"lease_expires_at={row['lease_expires_at']}",
-            })
+            issues.append(
+                {
+                    "kind": "stuck_processing",
+                    "queue_id": row["id"],
+                    "source_id": row["source_id"],
+                    "external_id": row["external_id"],
+                    "title": row["title"],
+                    "detail": f"lease_expires_at={row['lease_expires_at']}",
+                }
+            )
 
         state.close()
 
@@ -732,8 +738,10 @@ def process_reconcile(
             "kinds": {},
         }
         all_kinds = {
-            "orphan_vault_file", "missing_vault_file",
-            "failed_no_retry", "stuck_processing",
+            "orphan_vault_file",
+            "missing_vault_file",
+            "failed_no_retry",
+            "stuck_processing",
             "orphan_indexed",
         }
         for kind in all_kinds:
@@ -743,9 +751,7 @@ def process_reconcile(
         if json_output:
             _output_json(result)
         else:
-            typer.echo(
-                f"reconcile: найдено проблем — {len(issues)}, исправлено — {len(fixed)}"
-            )
+            typer.echo(f"reconcile: найдено проблем — {len(issues)}, исправлено — {len(fixed)}")
             for kind, number in result["kinds"].items():
                 if number:
                     typer.echo(f"  {kind}: {number}")
@@ -784,8 +790,13 @@ def process_backup(
         state.init_db()
         state.close()  # БД не должна быть открыта при архивации
 
-        zip_path = Path(output) if output else (
-            config.data_dir / f"kb_backup_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}.zip"
+        zip_path = (
+            Path(output)
+            if output
+            else (
+                config.data_dir
+                / f"kb_backup_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}.zip"
+            )
         )
         zip_path.parent.mkdir(parents=True, exist_ok=True)
 

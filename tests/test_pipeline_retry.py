@@ -34,7 +34,15 @@ class TestPipelineRetry:
             (source_id, external_id, canonical_url, title, raw_text, raw_hash, state, next_retry_at)
             VALUES (?, ?, ?, ?, ?, ?, 'failed', ?)
             """,
-            ("yt_test", "yt_vid1", "https://youtube.com/watch?v=vid1", "Title", "raw text", "hash1", past),
+            (
+                "yt_test",
+                "yt_vid1",
+                "https://youtube.com/watch?v=vid1",
+                "Title",
+                "raw text",
+                "hash1",
+                past,
+            ),
         )
         conn.commit()
         state.close()
@@ -42,10 +50,11 @@ class TestPipelineRetry:
         pipeline = self._make_pipeline(config)
 
         # Мокаем summarize_structured, write_note, index_note чтобы не вызывать реальные зависимости
-        with patch.object(pipeline.llm, "summarize_structured") as mock_summarize, \
-             patch.object(pipeline.vault, "write_note") as mock_write, \
-             patch.object(pipeline.state, "index_note") as mock_index:
-
+        with (
+            patch.object(pipeline.llm, "summarize_structured") as mock_summarize,
+            patch.object(pipeline.vault, "write_note") as mock_write,
+            patch.object(pipeline.state, "index_note") as mock_index,
+        ):
             mock_summarize.return_value = SummaryData(
                 title="Тест", content="## Суть\nТест\n", tags=["тест"], topic="Общее"
             )
@@ -71,17 +80,26 @@ class TestPipelineRetry:
             (source_id, external_id, canonical_url, title, raw_text, raw_hash, state, lease_expires_at)
             VALUES (?, ?, ?, ?, ?, ?, 'processing', ?)
             """,
-            ("yt_test", "yt_vid_stuck", "https://youtube.com/watch?v=stuck", "Stuck Title", "raw text", "hash_stuck", past),
+            (
+                "yt_test",
+                "yt_vid_stuck",
+                "https://youtube.com/watch?v=stuck",
+                "Stuck Title",
+                "raw text",
+                "hash_stuck",
+                past,
+            ),
         )
         conn.commit()
         state.close()
 
         pipeline = self._make_pipeline(config)
 
-        with patch.object(pipeline.llm, "summarize_structured") as mock_summarize, \
-             patch.object(pipeline.vault, "write_note") as mock_write, \
-             patch.object(pipeline.state, "index_note") as mock_index:
-
+        with (
+            patch.object(pipeline.llm, "summarize_structured") as mock_summarize,
+            patch.object(pipeline.vault, "write_note") as mock_write,
+            patch.object(pipeline.state, "index_note") as mock_index,
+        ):
             mock_summarize.return_value = SummaryData(
                 title="Stuck Title", content="## Суть\nТест\n", tags=["тест"], topic="Общее"
             )
@@ -103,13 +121,18 @@ class TestPipelineExitCode:
         from kb_agent.sources.manager import SourceCollectionResult
 
         monkeypatch.setattr(
-            pipeline_mod, "run_collection",
+            pipeline_mod,
+            "run_collection",
             lambda config, state: SourceCollectionResult(),
         )
         pipeline = Pipeline(config)
         pipeline._process_queue = lambda: {"processed": 0, "created": 0, "skipped": 0, "failed": 0}
-        pipeline.catalog.generate = lambda: __import__("pathlib", fromlist=["Path"]).Path("/tmp/catalog.md")
-        pipeline._write_vault_digest = lambda *a, **k: __import__("pathlib", fromlist=["Path"]).Path("/tmp/digest.md")
+        pipeline.catalog.generate = lambda: __import__("pathlib", fromlist=["Path"]).Path(
+            "/tmp/catalog.md"
+        )
+        pipeline._write_vault_digest = lambda *a, **k: __import__(
+            "pathlib", fromlist=["Path"]
+        ).Path("/tmp/digest.md")
         monkeypatch.setattr(pipeline_mod, "ensure_prompt_seeded", lambda config, state: None)
         pipeline.state.init_db = lambda: None
         pipeline._load_profile = dict
@@ -135,8 +158,12 @@ class TestPipelineExitCode:
         monkeypatch.setattr(pipeline_mod, "run_collection", fake_run_collection)
         pipeline = Pipeline(config)
         pipeline._process_queue = lambda: {"processed": 0, "created": 0, "skipped": 0, "failed": 0}
-        pipeline.catalog.generate = lambda: __import__("pathlib", fromlist=["Path"]).Path("/tmp/catalog.md")
-        pipeline._write_vault_digest = lambda *a, **k: __import__("pathlib", fromlist=["Path"]).Path("/tmp/digest.md")
+        pipeline.catalog.generate = lambda: __import__("pathlib", fromlist=["Path"]).Path(
+            "/tmp/catalog.md"
+        )
+        pipeline._write_vault_digest = lambda *a, **k: __import__(
+            "pathlib", fromlist=["Path"]
+        ).Path("/tmp/digest.md")
         monkeypatch.setattr(pipeline_mod, "ensure_prompt_seeded", lambda config, state: None)
         pipeline.state.init_db = lambda: None
         pipeline._load_profile = dict
@@ -153,13 +180,18 @@ class TestPipelineExitCode:
         from kb_agent.sources.manager import SourceCollectionResult
 
         monkeypatch.setattr(
-            pipeline_mod, "run_collection",
+            pipeline_mod,
+            "run_collection",
             lambda config, state: SourceCollectionResult(),
         )
         pipeline = Pipeline(config)
         pipeline._process_queue = lambda: {"processed": 1, "created": 0, "skipped": 0, "failed": 2}
-        pipeline.catalog.generate = lambda: __import__("pathlib", fromlist=["Path"]).Path("/tmp/catalog.md")
-        pipeline._write_vault_digest = lambda *a, **k: __import__("pathlib", fromlist=["Path"]).Path("/tmp/digest.md")
+        pipeline.catalog.generate = lambda: __import__("pathlib", fromlist=["Path"]).Path(
+            "/tmp/catalog.md"
+        )
+        pipeline._write_vault_digest = lambda *a, **k: __import__(
+            "pathlib", fromlist=["Path"]
+        ).Path("/tmp/digest.md")
         monkeypatch.setattr(pipeline_mod, "ensure_prompt_seeded", lambda config, state: None)
         pipeline.state.init_db = lambda: None
         pipeline._load_profile = dict
@@ -184,8 +216,12 @@ class TestPipelineExitCode:
         monkeypatch.setattr(pipeline_mod, "run_collection", fake_run_collection)
         pipeline = Pipeline(config)
         pipeline._process_queue = lambda: {"processed": 0, "created": 0, "skipped": 0, "failed": 0}
-        pipeline.catalog.generate = lambda: __import__("pathlib", fromlist=["Path"]).Path("/tmp/catalog.md")
-        pipeline._write_vault_digest = lambda *a, **k: __import__("pathlib", fromlist=["Path"]).Path("/tmp/digest.md")
+        pipeline.catalog.generate = lambda: __import__("pathlib", fromlist=["Path"]).Path(
+            "/tmp/catalog.md"
+        )
+        pipeline._write_vault_digest = lambda *a, **k: __import__(
+            "pathlib", fromlist=["Path"]
+        ).Path("/tmp/digest.md")
         monkeypatch.setattr(pipeline_mod, "ensure_prompt_seeded", lambda config, state: None)
         pipeline.state.init_db = lambda: None
         pipeline._load_profile = dict
@@ -214,8 +250,12 @@ class TestPipelineExitCode:
         monkeypatch.setattr(pipeline_mod, "run_collection", fake_run_collection)
         pipeline = Pipeline(config)
         pipeline._process_queue = lambda: {"processed": 0, "created": 0, "skipped": 0, "failed": 0}
-        pipeline.catalog.generate = lambda: __import__("pathlib", fromlist=["Path"]).Path("/tmp/catalog.md")
-        pipeline._write_vault_digest = lambda *a, **k: __import__("pathlib", fromlist=["Path"]).Path("/tmp/digest.md")
+        pipeline.catalog.generate = lambda: __import__("pathlib", fromlist=["Path"]).Path(
+            "/tmp/catalog.md"
+        )
+        pipeline._write_vault_digest = lambda *a, **k: __import__(
+            "pathlib", fromlist=["Path"]
+        ).Path("/tmp/digest.md")
         monkeypatch.setattr(pipeline_mod, "ensure_prompt_seeded", lambda config, state: None)
         pipeline.state.init_db = lambda: None
         pipeline._load_profile = dict
@@ -250,8 +290,11 @@ class TestPipelineExitCode:
                         "youtube": {"new": 0, "skipped": 0, "with_subtitles": 0},
                     },
                     "processing": {
-                        "processed": 0, "created": 0, "skipped": 0,
-                        "relevance_skipped": 0, "failed": 1,
+                        "processed": 0,
+                        "created": 0,
+                        "skipped": 0,
+                        "relevance_skipped": 0,
+                        "failed": 1,
                     },
                     "catalog": "/tmp/c.md",
                     "vault_digest": "/tmp/d.md",
@@ -414,8 +457,15 @@ class TestMarkFailedBackoff:
                 (source_id, external_id, canonical_url, title, raw_text, raw_hash, state, next_retry_at)
                 VALUES (?, ?, ?, ?, ?, ?, 'failed', ?)
                 """,
-                ("src", "ext_retry", "https://example.com/r", "T", "text", "hash",
-                 (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()),
+                (
+                    "src",
+                    "ext_retry",
+                    "https://example.com/r",
+                    "T",
+                    "text",
+                    "hash",
+                    (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat(),
+                ),
             )
             qid = conn.execute(
                 "SELECT id FROM raw_queue WHERE external_id = ?", ("ext_retry",)
@@ -426,9 +476,7 @@ class TestMarkFailedBackoff:
             assert item is not None
             assert item["id"] == qid
             # claim_next возвращает снимок до обновления; проверяем статус в БД.
-            row = conn.execute(
-                "SELECT state FROM raw_queue WHERE id = ?", (qid,)
-            ).fetchone()
+            row = conn.execute("SELECT state FROM raw_queue WHERE id = ?", (qid,)).fetchone()
             assert row["state"] == "processing"
         finally:
             state.close()

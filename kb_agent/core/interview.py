@@ -52,6 +52,7 @@ class InterviewManager:
 
     def ask(self, question: str, default: str | None = None) -> str:
         from rich.prompt import Prompt
+
         prompt_text = question
         if default:
             prompt_text += f" [{default}]"
@@ -68,7 +69,9 @@ class InterviewManager:
         if "topics" in profile:
             profile["topics"] = [t.strip() for t in profile["topics"].split(",") if t.strip()]
         if "sources" in profile:
-            profile["sources"] = [s.strip() for s in profile["sources"].replace(";", ",").split(",") if s.strip()]
+            profile["sources"] = [
+                s.strip() for s in profile["sources"].replace(";", ",").split(",") if s.strip()
+            ]
         profile["system"] = profile.get("system", "Obsidian")
         profile["vault_path"] = str(self.config.vault_path)
         return profile

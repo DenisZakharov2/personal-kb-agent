@@ -135,7 +135,9 @@ class TestInsightsEngine:
         response = engine.get_insights()
 
         themes = [i for i in response.insights if i.link_type == "repeating_theme"]
-        assert len(themes) >= 1, f"Ожидался инсайт repeating_theme, got: {[i.statement for i in response.insights]}"
+        assert len(themes) >= 1, (
+            f"Ожидался инсайт repeating_theme, got: {[i.statement for i in response.insights]}"
+        )
         assert any("python" in i.statement for i in themes), themes
 
     def test_get_insights_existing_links(self, config, state):
@@ -147,7 +149,9 @@ class TestInsightsEngine:
         response = engine.get_insights()
 
         links = [i for i in response.insights if i.link_type == "connection"]
-        assert len(links) == 2, f"Ожидалось 2 connection-инсайта, got: {[i.statement for i in response.insights]}"
+        assert len(links) == 2, (
+            f"Ожидалось 2 connection-инсайта, got: {[i.statement for i in response.insights]}"
+        )
 
     def test_get_insights_empty_db(self, config, state):
         """На пустой базе инсайтов нет, не падает."""

@@ -74,7 +74,9 @@ class TestPendingProposalSecurityFields:
 
         assert change["change_id"] == change_id  # одноразовый идентификатор
         assert change["diff"] == "Удалить источник tg_target"  # diff
-        assert change["content_hash"] is not None and len(change["content_hash"]) == 64  # payload_hash
+        assert (
+            change["content_hash"] is not None and len(change["content_hash"]) == 64
+        )  # payload_hash
         assert change["revision"] == 0  # base_revision
         assert change["created_by"] == "external_agent"  # автор
         assert change["expires_at"] is not None  # TTL
@@ -185,9 +187,7 @@ class TestMaliciousNoteCannotTriggerActions:
         )
 
         # Пытаемся удалить через MCP (модель может только создать pending, не применить)
-        result = asyncio.run(
-            handle_call_tool("kb_remove_source", {"source_id": "tg_victim"})
-        )
+        result = asyncio.run(handle_call_tool("kb_remove_source", {"source_id": "tg_victim"}))
 
         # Успешный возврат — список TextContent, не CallToolResult
         assert not _is_error_result(result)
@@ -204,9 +204,7 @@ class TestMaliciousNoteCannotTriggerActions:
         monkeypatch.setattr(mcp_server_mod, "load_config", lambda: config)
 
         state.init_db()
-        state.add_source(
-            source_id="tg_keep", source_type="telegram", channel="https://t.me/s/keep"
-        )
+        state.add_source(source_id="tg_keep", source_type="telegram", channel="https://t.me/s/keep")
 
         # Пытаемся обновить профиль через MCP — создаёт pending, не меняет профиль
         result = asyncio.run(

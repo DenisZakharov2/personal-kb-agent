@@ -21,7 +21,17 @@ def _insert_queue(
         (source_id, external_id, canonical_url, title, raw_text, raw_hash, state, last_error, next_retry_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        ("src", external_id, "https://x/1", "Title", "raw", "hash", queue_state, "err", next_retry_at),
+        (
+            "src",
+            external_id,
+            "https://x/1",
+            "Title",
+            "raw",
+            "hash",
+            queue_state,
+            "err",
+            next_retry_at,
+        ),
     )
     conn.commit()
     row = conn.execute("SELECT id FROM raw_queue WHERE external_id = ?", (external_id,)).fetchone()
@@ -54,19 +64,35 @@ class TestRetry:
              next_retry_at, lease_expires_at, processing_started_at)
             VALUES (?, ?, ?, ?, ?, ?, 'failed', ?, ?, ?)
             """,
-            ("src", "job-retry-2", "https://x/2", "T", "r", "h", "2099-01-01", "2099-01-01", "2099-01-01"),
+            (
+                "src",
+                "job-retry-2",
+                "https://x/2",
+                "T",
+                "r",
+                "h",
+                "2099-01-01",
+                "2099-01-01",
+                "2099-01-01",
+            ),
         )
         conn.commit()
-        qid = conn.execute("SELECT id FROM raw_queue WHERE external_id = 'job-retry-2'").fetchone()["id"]
+        qid = conn.execute("SELECT id FROM raw_queue WHERE external_id = 'job-retry-2'").fetchone()[
+            "id"
+        ]
 
         runner = CliRunner()
         result = runner.invoke(app, ["retry", str(qid)], prog_name="kb-agent")
         assert result.exit_code == 0
 
-        row = state.connect().execute(
-            "SELECT state, next_retry_at, lease_expires_at, processing_started_at FROM raw_queue WHERE id = ?",
-            (qid,),
-        ).fetchone()
+        row = (
+            state.connect()
+            .execute(
+                "SELECT state, next_retry_at, lease_expires_at, processing_started_at FROM raw_queue WHERE id = ?",
+                (qid,),
+            )
+            .fetchone()
+        )
         assert row["state"] == "new"
         assert row["next_retry_at"] is None
         assert row["lease_expires_at"] is None

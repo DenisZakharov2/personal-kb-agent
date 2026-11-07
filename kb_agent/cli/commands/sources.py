@@ -69,7 +69,9 @@ def sources_list(
         return
 
     if not sources:
-        typer.echo("Источников не найдено. Добавьте источник: kb-agent sources add telegram https://t.me/s/rubiconzone")
+        typer.echo(
+            "Источников не найдено. Добавьте источник: kb-agent sources add telegram https://t.me/s/rubiconzone"
+        )
         return
     typer.echo("Источники:")
     for s in sources:
@@ -84,7 +86,9 @@ def sources_list(
 @app.command("add")
 def sources_add(
     source_type: str = typer.Argument(..., help="Тип источника: telegram или youtube"),
-    url: str = typer.Argument(..., help="URL источника (https://t.me/s/канал или https://youtube.com/@kanal)"),
+    url: str = typer.Argument(
+        ..., help="URL источника (https://t.me/s/канал или https://youtube.com/@kanal)"
+    ),
     source_id: str = typer.Option(
         "",
         "--id",

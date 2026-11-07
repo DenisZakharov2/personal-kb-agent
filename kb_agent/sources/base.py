@@ -30,7 +30,11 @@ class SourceConfig:
             enabled=data.get("enabled", True),
             last_checked=data.get("last_checked"),
             last_updated=data.get("last_updated"),
-            extra={k: v for k, v in data.items() if k not in ("id", "type", "url", "enabled", "last_checked", "last_updated")},
+            extra={
+                k: v
+                for k, v in data.items()
+                if k not in ("id", "type", "url", "enabled", "last_checked", "last_updated")
+            },
         )
 
     def to_dict(self) -> dict:

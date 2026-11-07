@@ -34,26 +34,20 @@ class TestFeedbackRate:
 
     def test_rate_invalid_score_rejected(self, config, state, monkeypatch):
         """Оценка вне диапазона 1-5 отклоняется с кодом 1."""
-        result = _invoke(
-            config, monkeypatch, ["feedback", "rate", "note-123", "0"]
-        )
+        result = _invoke(config, monkeypatch, ["feedback", "rate", "note-123", "0"])
         assert result.exit_code == 1
         data = __import__("json").loads(result.output)
         assert "error" in data
         assert "от 1 до 5" in data["error"]
 
-        result = _invoke(
-            config, monkeypatch, ["feedback", "rate", "note-123", "6"]
-        )
+        result = _invoke(config, monkeypatch, ["feedback", "rate", "note-123", "6"])
         assert result.exit_code == 1
         data = __import__("json").loads(result.output)
         assert "error" in data
 
     def test_rate_without_comment(self, config, state, monkeypatch):
         """Оценка без комментария сохраняется."""
-        result = _invoke(
-            config, monkeypatch, ["feedback", "rate", "note-456", "3"]
-        )
+        result = _invoke(config, monkeypatch, ["feedback", "rate", "note-456", "3"])
         assert result.exit_code == 0
         data = __import__("json").loads(result.output)
         assert data["comment"] == ""
@@ -65,9 +59,7 @@ class TestFeedbackTell:
 
     def test_tell_saves_message(self, config, state, monkeypatch):
         """Сообщение сохраняется со score=0 и note_id=__global__."""
-        result = _invoke(
-            config, monkeypatch, ["feedback", "tell", "Нужно больше примеров кода"]
-        )
+        result = _invoke(config, monkeypatch, ["feedback", "tell", "Нужно больше примеров кода"])
         assert result.exit_code == 0, result.output
         data = __import__("json").loads(result.output)
         assert data["action"] == "tell"
@@ -118,9 +110,7 @@ class TestFeedbackList:
 
     def test_list_empty_for_note(self, config, state, monkeypatch):
         """По несуществующей заметке отзывов нет."""
-        result = _invoke(
-            config, monkeypatch, ["feedback", "list", "несуществующая-заметка"]
-        )
+        result = _invoke(config, monkeypatch, ["feedback", "list", "несуществующая-заметка"])
         assert result.exit_code == 0
         data = __import__("json").loads(result.output)
         assert data["note_id"] == "несуществующая-заметка"
@@ -138,9 +128,7 @@ class TestFeedbackList:
         collector.rate("note-abc", 3, "Второй отзыв")
         collector.rate("note-xyz", 1, "Отзыв по другой заметке")
 
-        result = _invoke(
-            config, monkeypatch, ["feedback", "list", "note-abc"]
-        )
+        result = _invoke(config, monkeypatch, ["feedback", "list", "note-abc"])
         assert result.exit_code == 0
         data = _json.loads(result.output)
         assert data["note_id"] == "note-abc"

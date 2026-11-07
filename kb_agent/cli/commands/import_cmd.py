@@ -76,9 +76,7 @@ def import_path(
             source_id = str(fm.get("source_id") or f"import_{slugify(f.stem)}")
             external_id = str(fm.get("external_id", ""))
             canonical_url = str(fm.get("url", ""))
-            received_at = str(
-                fm.get("received_at") or datetime.now(timezone.utc).isoformat()
-            )
+            received_at = str(fm.get("received_at") or datetime.now(timezone.utc).isoformat())
             note_id = str(fm.get("note_id") or f"import_{_content_hash(str(f))[:16]}")
 
             full_content = body.strip()
@@ -162,8 +160,15 @@ def import_path(
 @app.command(name="import")
 def import_command(
     path: Annotated[Path, typer.Argument(help="Папка с .md/.txt файлами для импорта")],
-    dry_run: Annotated[bool, typer.Option("--dry-run", help="Только показать, что будет импортировано, без записи в vault и БД")] = False,
-    json_output: Annotated[bool, typer.Option("--json", "-j", help="Вывести результат в формате JSON")] = False,
+    dry_run: Annotated[
+        bool,
+        typer.Option(
+            "--dry-run", help="Только показать, что будет импортировано, без записи в vault и БД"
+        ),
+    ] = False,
+    json_output: Annotated[
+        bool, typer.Option("--json", "-j", help="Вывести результат в формате JSON")
+    ] = False,
 ) -> None:
     """Импортирует Markdown/TXT файлы из папки в базу знаний."""
     config = load_config()

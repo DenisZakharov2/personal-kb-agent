@@ -170,9 +170,7 @@ class VaultManager:
         archive_folder.mkdir(parents=True, exist_ok=True)
         target = archive_folder / path.name
         if target.exists():
-            target = (
-                archive_folder / f"{path.stem}_{uuid.uuid4().hex[:8]}{path.suffix}"
-            )
+            target = archive_folder / f"{path.stem}_{uuid.uuid4().hex[:8]}{path.suffix}"
         os.replace(path, target)
         # Помечаем в frontmatter, чтобы заметка не потеряла статус архивной
         self._rewrite_frontmatter(target, archived=True)
@@ -233,9 +231,9 @@ class VaultManager:
         if merged_note_id not in merged_from:
             merged_from.append(merged_note_id)
         loaded["merged_from"] = merged_from
-        new_fm = (
-            yaml.safe_dump(loaded, allow_unicode=True, sort_keys=False, default_flow_style=False).strip()
-        )
+        new_fm = yaml.safe_dump(
+            loaded, allow_unicode=True, sort_keys=False, default_flow_style=False
+        ).strip()
         atomic_write_text(path, "---\n" + new_fm + "\n---\n" + body, backup=False)
 
     def restore_note(self, note_id: str, topic: str | None = None) -> Path | None:
@@ -253,9 +251,7 @@ class VaultManager:
             folder = self._topic_folder(topic)
             target = folder / path.name
             if target.exists():
-                target = (
-                    folder / f"{path.stem}_{uuid.uuid4().hex[:8]}{path.suffix}"
-                )
+                target = folder / f"{path.stem}_{uuid.uuid4().hex[:8]}{path.suffix}"
             os.replace(path, target)
             self._rewrite_frontmatter(target, archived=False)
             logger.info("Заметка restored: %s -> %s", path, target)
@@ -277,7 +273,9 @@ class VaultManager:
         if not isinstance(loaded, dict):
             return
         loaded["archived"] = archived
-        new_fm = yaml.safe_dump(loaded, allow_unicode=True, sort_keys=False, default_flow_style=False).strip()
+        new_fm = yaml.safe_dump(
+            loaded, allow_unicode=True, sort_keys=False, default_flow_style=False
+        ).strip()
         atomic_write_text(path, "---\n" + new_fm + "\n---\n" + body, backup=False)
 
     def list_notes(self, topic: str | None = None) -> list[Path]:
@@ -310,9 +308,15 @@ class VaultManager:
                 fixed_lines.append(line)
                 continue
             key = stripped[:colon_pos]
-            value = stripped[colon_pos + 2:]
-            if value and value[0] not in ('"', "'") and (
-                value.startswith(("@", "- ", "#", "*", "[", "{")) or ": " in value or value.lower() in ("true", "false", "null", "~")
+            value = stripped[colon_pos + 2 :]
+            if (
+                value
+                and value[0] not in ('"', "'")
+                and (
+                    value.startswith(("@", "- ", "#", "*", "[", "{"))
+                    or ": " in value
+                    or value.lower() in ("true", "false", "null", "~")
+                )
             ):
                 indent = line[: len(line) - len(line.lstrip())]
                 value_escaped = "'" + value.replace("'", "''") + "'"

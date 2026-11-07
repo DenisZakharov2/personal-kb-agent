@@ -32,9 +32,9 @@ class TestQueueNoteId:
             """,
             ("src", "ext1", "https://example.com/1", "T", "text", "hash1"),
         )
-        qid = conn.execute(
-            "SELECT id FROM raw_queue WHERE external_id = ?", ("ext1",)
-        ).fetchone()["id"]
+        qid = conn.execute("SELECT id FROM raw_queue WHERE external_id = ?", ("ext1",)).fetchone()[
+            "id"
+        ]
         conn.commit()
 
         state.set_queue_item_note_id(qid, "note_abc123")
@@ -61,21 +61,25 @@ class TestQueueNoteId:
         """get_queue_items_without_note_id находит обработанные без note_id."""
         # processed с note_id
         state.enqueue(
-            source_id="tg_test", external_id="tg_1", canonical_url="u",
-            title="T1", raw_text="t1", raw_hash="h1",
+            source_id="tg_test",
+            external_id="tg_1",
+            canonical_url="u",
+            title="T1",
+            raw_text="t1",
+            raw_hash="h1",
         )
         state.enqueue(
-            source_id="tg_test", external_id="tg_2", canonical_url="u",
-            title="T2", raw_text="t2", raw_hash="h2",
+            source_id="tg_test",
+            external_id="tg_2",
+            canonical_url="u",
+            title="T2",
+            raw_text="t2",
+            raw_hash="h2",
         )
         # Помечаем оба processed, но только одному даём note_id
         conn = state.connect()
-        row1 = conn.execute(
-            "SELECT id FROM raw_queue WHERE external_id = 'tg_1'"
-        ).fetchone()
-        row2 = conn.execute(
-            "SELECT id FROM raw_queue WHERE external_id = 'tg_2'"
-        ).fetchone()
+        row1 = conn.execute("SELECT id FROM raw_queue WHERE external_id = 'tg_1'").fetchone()
+        row2 = conn.execute("SELECT id FROM raw_queue WHERE external_id = 'tg_2'").fetchone()
         conn.execute(
             "UPDATE raw_queue SET state = 'processed', note_id = 'note_1' WHERE id = ?",
             (row1["id"],),
@@ -99,9 +103,7 @@ class TestPipelineIdempotentRetry:
         pipeline.relevance = RelevanceGate({})  # пустой профиль — всё релевантно
         return pipeline
 
-    def test_retry_uses_stored_note_id_no_duplicate(
-        self, config, state, temp_dir, monkeypatch
-    ):
+    def test_retry_uses_stored_note_id_no_duplicate(self, config, state, temp_dir, monkeypatch):
         """При повторе failed-элемента используется сохранённый note_id."""
         # Вставляем элемент в очередь с note_id, но без записи в notes
         state.init_db()
@@ -114,8 +116,12 @@ class TestPipelineIdempotentRetry:
             VALUES (?, ?, ?, ?, ?, ?, 'failed', 'note_reuse_123', ?)
             """,
             (
-                "yt_test", "yt_vid_reuse", "https://youtube.com/watch?v=reuse",
-                "Title", "raw text", "hash_reuse",
+                "yt_test",
+                "yt_vid_reuse",
+                "https://youtube.com/watch?v=reuse",
+                "Title",
+                "raw text",
+                "hash_reuse",
                 (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat(),
             ),
         )
@@ -127,11 +133,12 @@ class TestPipelineIdempotentRetry:
 
         pipeline = self._make_pipeline(config)
 
-        with patch.object(pipeline.llm, "summarize_structured") as mock_summarize, \
-             patch.object(pipeline.vault, "write_note") as mock_write, \
-             patch.object(pipeline.state, "index_note") as mock_index, \
-             patch.object(pipeline.state, "get_note_by_external", return_value=None):
-
+        with (
+            patch.object(pipeline.llm, "summarize_structured") as mock_summarize,
+            patch.object(pipeline.vault, "write_note") as mock_write,
+            patch.object(pipeline.state, "index_note") as mock_index,
+            patch.object(pipeline.state, "get_note_by_external", return_value=None),
+        ):
             mock_summarize.return_value = SummaryData(
                 title="Реузи", content="## Суть\nТест\n", tags=["тест"], topic="Общее"
             )
@@ -177,12 +184,11 @@ class TestReconcileCommand:
         state.close()
 
         runner = CliRunner()
-        monkeypatch.setattr(
-            "kb_agent.cli.commands.process.load_config", lambda: config
-        )
+        monkeypatch.setattr("kb_agent.cli.commands.process.load_config", lambda: config)
         result = runner.invoke(process_app, ["reconcile", "--json"], prog_name="kb-agent")
         assert result.exit_code == 0, result.output
         import json
+
         data = json.loads(result.output)
         assert data["count"] >= 1
         kinds = {i["kind"] for i in data["issues"]}
@@ -216,14 +222,11 @@ class TestReconcileCommand:
         state.close()
 
         runner = CliRunner()
-        monkeypatch.setattr(
-            "kb_agent.cli.commands.process.load_config", lambda: config
-        )
-        result = runner.invoke(
-            process_app, ["reconcile", "--fix", "--json"], prog_name="kb-agent"
-        )
+        monkeypatch.setattr("kb_agent.cli.commands.process.load_config", lambda: config)
+        result = runner.invoke(process_app, ["reconcile", "--fix", "--json"], prog_name="kb-agent")
         assert result.exit_code == 0, result.output
         import json
+
         data = json.loads(result.output)
         # Должен быть исправлен хотя бы один орфан
         assert data["fixed_count"] >= 1
@@ -233,8 +236,8 @@ class TestReconcileCommand:
         # Проверяем, что очередь помечена processed
         state2 = StateManager(config.db_path)
         state2.init_db()
-        row = state2.connect().execute(
-            "SELECT state FROM raw_queue WHERE id = ?", (qid,)
-        ).fetchone()
+        row = (
+            state2.connect().execute("SELECT state FROM raw_queue WHERE id = ?", (qid,)).fetchone()
+        )
         assert row["state"] == "processed"
         state2.close()

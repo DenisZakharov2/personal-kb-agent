@@ -65,9 +65,7 @@ class TestLLMClientNoKey:
     def test_openai_without_key_refuses(self):
         """OpenAI без ключа отказывает (не локальный провайдер)."""
         client = _client(provider="openai", api_key=None)
-        result = client.complete(
-            messages=[{"role": "user", "content": "привет"}]
-        )
+        result = client.complete(messages=[{"role": "user", "content": "привет"}])
         assert result.error == "API ключ LLM не задан"
         assert result.text == ""
 
@@ -116,7 +114,7 @@ class TestLLMStructured:
     def test_summarize_structured_json_in_code_fence(self):
         """JSON внутри markdown-блока ```json ... ``` извлекается корректно."""
         client = _client(provider="ollama", api_key=None)
-        json_text = "```json\n{\"title\": \"Т\", \"content\": \"C\", \"tags\": [], \"topic\": \"Общее\"}\n```"
+        json_text = '```json\n{"title": "Т", "content": "C", "tags": [], "topic": "Общее"}\n```'
         with patch("kb_agent.processing.llm_client.httpx.Client") as mock_client:
             self._mock_client_post(mock_client, json_text=json_text)
             result = client.summarize_structured(
@@ -130,9 +128,7 @@ class TestLLMStructured:
     def test_summarize_structured_retries_on_invalid_then_valid(self):
         """При первом невалидном ответе делается повтор и возвращается валидный."""
         client = _client(provider="ollama", api_key=None, max_retries=1)
-        valid = json.dumps(
-            {"title": "Ок", "content": "С", "tags": [], "topic": "Общее"}
-        )
+        valid = json.dumps({"title": "Ок", "content": "С", "tags": [], "topic": "Общее"})
         with patch("kb_agent.processing.llm_client.httpx.Client") as mock_client:
             mock_client.return_value = self._flaky_client(valid)
 
@@ -191,15 +187,24 @@ class TestLLMStructured:
 
     def test_validate_topic_in_profile(self):
         """Тема из профиля возвращается как есть."""
-        assert LLMClient._validate_topic("ИИ и нейросети", ["ИИ и нейросети", "Программирование"]) == "ИИ и нейросети"
+        assert (
+            LLMClient._validate_topic("ИИ и нейросети", ["ИИ и нейросети", "Программирование"])
+            == "ИИ и нейросети"
+        )
 
     def test_validate_topic_closest_match(self):
         """Ближайшее совпадение (одна строка содержит другую) подбирается."""
-        assert LLMClient._validate_topic("нейросети", ["ИИ и нейросети", "Программирование"]) == "ИИ и нейросети"
+        assert (
+            LLMClient._validate_topic("нейросети", ["ИИ и нейросети", "Программирование"])
+            == "ИИ и нейросети"
+        )
 
     def test_validate_topic_unknown(self):
         """Неизвестная тема → «Общее»."""
-        assert LLMClient._validate_topic("Кулинария", ["ИИ и нейросети", "Программирование"]) == "Общее"
+        assert (
+            LLMClient._validate_topic("Кулинария", ["ИИ и нейросети", "Программирование"])
+            == "Общее"
+        )
 
     def test_validate_topic_empty_profile(self):
         """Пустой профиль → тема как есть или Общее."""
@@ -249,4 +254,3 @@ class TestLLMStructured:
             )
 
         assert result.topic == "Общее"
-

@@ -55,9 +55,27 @@ class TestYouTubeLimit:
         """При limit=1 обрабатывается только одно видео из N найденных."""
         # 3 видео найдено, но limit=1
         mock_fetch_videos.return_value = [
-            {"id": "vid1", "title": "Video 1", "description": "desc1", "webpage_url": "https://youtube.com/watch?v=vid1", "upload_date": "20260101"},
-            {"id": "vid2", "title": "Video 2", "description": "desc2", "webpage_url": "https://youtube.com/watch?v=vid2", "upload_date": "20260102"},
-            {"id": "vid3", "title": "Video 3", "description": "desc3", "webpage_url": "https://youtube.com/watch?v=vid3", "upload_date": "20260103"},
+            {
+                "id": "vid1",
+                "title": "Video 1",
+                "description": "desc1",
+                "webpage_url": "https://youtube.com/watch?v=vid1",
+                "upload_date": "20260101",
+            },
+            {
+                "id": "vid2",
+                "title": "Video 2",
+                "description": "desc2",
+                "webpage_url": "https://youtube.com/watch?v=vid2",
+                "upload_date": "20260102",
+            },
+            {
+                "id": "vid3",
+                "title": "Video 3",
+                "description": "desc3",
+                "webpage_url": "https://youtube.com/watch?v=vid3",
+                "upload_date": "20260103",
+            },
         ]
         mock_filter.side_effect = lambda v, m: v  # не фильтруем
         mock_fetch_transcript.return_value = None
@@ -89,7 +107,13 @@ class TestYouTubeDedup:
         """is_processed проверяется ДО скачивания субтитров."""
         # Первый запуск: видео обрабатывается
         mock_fetch_videos.return_value = [
-            {"id": "vid1", "title": "Video 1", "description": "desc1", "webpage_url": "https://youtube.com/watch?v=vid1", "upload_date": "20260101"},
+            {
+                "id": "vid1",
+                "title": "Video 1",
+                "description": "desc1",
+                "webpage_url": "https://youtube.com/watch?v=vid1",
+                "upload_date": "20260101",
+            },
         ]
         mock_filter.side_effect = lambda v, m: v
         mock_fetch_transcript.return_value = None

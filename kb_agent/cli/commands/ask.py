@@ -115,9 +115,7 @@ def search_command(
             typer.echo(f"Найдено: {len(results)}")
             typer.echo("")
             for r in results:
-                typer.echo(
-                    f"- **{r.title}** (ID: {r.note_id}, теги: {r.tags}, тема: {r.topic})"
-                )
+                typer.echo(f"- **{r.title}** (ID: {r.note_id}, теги: {r.tags}, тема: {r.topic})")
     finally:
         state.close()
 

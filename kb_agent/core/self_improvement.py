@@ -129,7 +129,10 @@ class SelfImprovementEngine:
         )
         logger.info(
             "Предложение изменений промпта %s (v%s → v%s) сохранено: %s",
-            prompt_name, current_version, current_version + 1, reason,
+            prompt_name,
+            current_version,
+            current_version + 1,
+            reason,
         )
         return proposal
 
@@ -211,9 +214,7 @@ class SelfImprovementEngine:
                 "Предложение %s не прошло тестовый набор, применение отменено",
                 proposal.proposal_id,
             )
-            self.state.update_proposal(
-                proposal.proposal_id, status="failed", test_passed=0
-            )
+            self.state.update_proposal(proposal.proposal_id, status="failed", test_passed=0)
             proposal.status = "failed"
             return False
 
@@ -262,7 +263,9 @@ class SelfImprovementEngine:
         proposal.confirmed_at = now
         logger.info(
             "Промпт %s обновлён до версии %s (подтвердил %s)",
-            proposal.target_name, proposal.proposed_version, confirmed_by,
+            proposal.target_name,
+            proposal.proposed_version,
+            confirmed_by,
         )
         return True
 
@@ -296,10 +299,7 @@ class SelfImprovementEngine:
         except ValueError:
             rel_target_str = target_str
 
-        allowed = (
-            target_str in ALLOWED_CONFIG_PATHS
-            or rel_target_str in ALLOWED_CONFIG_PATHS
-        )
+        allowed = target_str in ALLOWED_CONFIG_PATHS or rel_target_str in ALLOWED_CONFIG_PATHS
         if not allowed:
             logger.error(
                 "Путь конфига не в allowlist: %s (разрешены: %s)",
@@ -355,7 +355,9 @@ class SelfImprovementEngine:
         proposal.applied_at = now
         proposal.confirmed_at = now
         logger.info(
-            "Конфиг %s обновлён атомарно (подтвердил %s)", proposal.target_name, confirmed_by,
+            "Конфиг %s обновлён атомарно (подтвердил %s)",
+            proposal.target_name,
+            confirmed_by,
         )
         return True
 
@@ -397,6 +399,7 @@ class SelfImprovementEngine:
 
     def _next_proposal_id(self) -> str:
         import uuid
+
         return str(uuid.uuid4())
 
     def _run_test_suite(self, proposal: ImprovementProposal) -> bool:
@@ -434,9 +437,9 @@ class SelfImprovementEngine:
             return True
 
         try:
-            note_count = self.state.connect().execute(
-                "SELECT COUNT(*) AS c FROM notes"
-            ).fetchone()["c"]
+            note_count = (
+                self.state.connect().execute("SELECT COUNT(*) AS c FROM notes").fetchone()["c"]
+            )
         except sqlite3.DatabaseError as exc:
             logger.warning("Не удалось посчитать заметки для eval: %s", exc)
             return True

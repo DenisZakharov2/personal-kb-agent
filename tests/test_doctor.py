@@ -52,9 +52,7 @@ class TestDoctor:
         ghost = next(i for i in data["issues"] if i["kind"] == "fts_without_file")
         assert ghost["note_id"] == "fts-ghost"
 
-    def test_detects_stuck_processing_and_failed_without_retry(
-        self, config, state, monkeypatch
-    ):
+    def test_detects_stuck_processing_and_failed_without_retry(self, config, state, monkeypatch):
         """Зависшие processing и failed без next_retry_at находятся."""
         datetime.now(timezone.utc).isoformat()
         past = (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat()
@@ -97,7 +95,12 @@ class TestDoctor:
                 {
                     "version": 1,
                     "sources": [
-                        {"id": "tg_yaml_only", "type": "telegram", "channel": "chan", "enabled": True}
+                        {
+                            "id": "tg_yaml_only",
+                            "type": "telegram",
+                            "channel": "chan",
+                            "enabled": True,
+                        }
                     ],
                 }
             ),

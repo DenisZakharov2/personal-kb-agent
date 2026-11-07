@@ -114,7 +114,9 @@ class SourceManager:
         raise ValueError(f"Неподдерживаемый тип источника: {source.type}")
 
 
-def run_collection(config: AppConfig | None = None, state: StateManager | None = None) -> SourceCollectionResult:
+def run_collection(
+    config: AppConfig | None = None, state: StateManager | None = None
+) -> SourceCollectionResult:
     """Удобная точка входа для сбора из всех источников."""
     if config is None:
         config = load_config()

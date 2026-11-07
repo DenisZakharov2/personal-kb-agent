@@ -80,7 +80,9 @@ class Pipeline:
             if not registry.list() and sources_path.exists():
                 imported = registry.import_from_yaml(sources_path)
                 if imported:
-                    logger.info("Выполнен начальный импорт %s источников из %s", imported, sources_path)
+                    logger.info(
+                        "Выполнен начальный импорт %s источников из %s", imported, sources_path
+                    )
         except sqlite3.OperationalError as exc:
             # Таблица sources может не существовать, если init_db был замокнут (тесты)
             logger.debug("Пропуск импорта источников: %s", exc)
@@ -222,7 +224,8 @@ class Pipeline:
                     relevance_skipped += 1
                     logger.info(
                         "Пропуск (relevance) элемент %s: %s",
-                        queue_id, relevance.reason,
+                        queue_id,
+                        relevance.reason,
                     )
                     continue
 
@@ -254,9 +257,7 @@ class Pipeline:
                 # валидация темы против профиля, повтор при невалидной схеме)
                 # Активная версия промпта берётся из prompt_history (её можно
                 # редактировать и откатывать через self-improve).
-                summarize_prompt = get_active_system_prompt(
-                    self.state, SUMMARIZE_PROMPT_NAME
-                )
+                summarize_prompt = get_active_system_prompt(self.state, SUMMARIZE_PROMPT_NAME)
                 summary = self.llm.summarize_structured(
                     raw_text=item["raw_text"] or "",
                     source_type=source_type,
@@ -377,9 +378,7 @@ class Pipeline:
         lines: list[str] = []
         lines.append("# Дайджест запуска конвейера")
         lines.append("")
-        lines.append(
-            f"Дата: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC"
-        )
+        lines.append(f"Дата: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC")
         lines.append("")
 
         lines.append("## Сбор из источников")
@@ -397,8 +396,8 @@ class Pipeline:
         lines.append(f"- Всего обработано: {processing['processed']}")
         lines.append(f"- Создано заметок: {processing['created']}")
         lines.append(f"- Обновлено заметок: {processing.get('updated', 0)}")
-        relevance_skipped = processing.get('relevance_skipped', 0)
-        other_skipped = processing['skipped'] - relevance_skipped
+        relevance_skipped = processing.get("relevance_skipped", 0)
+        other_skipped = processing["skipped"] - relevance_skipped
         lines.append(f"- Пропущено (relevance): {relevance_skipped}")
         lines.append(f"- Пропущено (другое): {max(0, other_skipped)}")
         lines.append(f"- Ошибок: {processing['failed']}")
@@ -422,11 +421,7 @@ class Pipeline:
 
     def _link_related_notes(self, note_id: str, tags: list[str]) -> None:
         """Создаёт связи `references` с заметками по общим тегам (топ-3)."""
-        my_tags = {
-            tag.strip().lower()
-            for tag in tags
-            if isinstance(tag, str) and tag.strip()
-        }
+        my_tags = {tag.strip().lower() for tag in tags if isinstance(tag, str) and tag.strip()}
         if not my_tags:
             return
         conn = self.state.connect()
@@ -467,7 +462,9 @@ def run_digest(config: AppConfig) -> str:
     yt = coll["youtube"]
     lines.append("## Сбор из источников")
     lines.append(f"- Telegram: новых {tg['new']}, спама {tg['spam']}, уже было {tg['existing']}")
-    lines.append(f"- YouTube: новых {yt['new']}, пропущено {yt['skipped']}, с субтитрами {yt['with_subtitles']}")
+    lines.append(
+        f"- YouTube: новых {yt['new']}, пропущено {yt['skipped']}, с субтитрами {yt['with_subtitles']}"
+    )
     lines.append("")
 
     proc = result["processing"]
