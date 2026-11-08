@@ -29,6 +29,7 @@ classifiers = [
     "Topic :: Internet :: WWW/HTTP :: Indexing/Search",
     "Topic :: Text Processing :: Indexing",
     "Topic :: Utilities",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
     "pydantic>=2.0,<3",
@@ -53,10 +54,11 @@ dev = [
     "mypy>=1.10,<2",
     "pip-audit>=2.7,<3",
     "typing-extensions>=4.0,<5",
+    "setuptools_scm>=8.0,<9",
 ]
 
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=68", "wheel", "setuptools_scm>=8.0"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
@@ -67,6 +69,8 @@ kb_agent = ["resources/**/*"]
 
 [project.scripts]
 kb-agent = "kb_agent.cli.main:app"
+
+[tool.setuptools_scm]
 
 [tool.ruff]
 line-length = 100

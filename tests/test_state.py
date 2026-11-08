@@ -42,14 +42,51 @@ class TestStateIndexNoteDedup:
         ).fetchone()
         assert notes_rows["cnt"] == 1
 
-    def test_rebuild_fts_restores_index_from_notes(self, config, state):
-        """rebuild_fts перестраивает notes_fts из таблицы notes."""
+    def test_rebuild_fts_restores_index_from_vault(self, config, state):
+        """rebuild_fts перестраивает notes_fts из файлов vault."""
+        from kb_agent.storage.vault import VaultManager
+
+        vault = VaultManager(config)
+        # Создаём реальные файлы заметок в vault
+        vault.write_note(
+            note_id="note-rebuild-1",
+            source_id="tg_test",
+            source_type="telegram",
+            external_id="ext1",
+            canonical_url="https://t.me/s/test/1",
+            published_at="2026-01-01",
+            received_at="2026-01-01T10:00:00",
+            title="Первая",
+            tags="тэг1",
+            topic="Тема",
+            content="содержимое первой заметки",
+        )
+        vault.write_note(
+            note_id="note-rebuild-2",
+            source_id="yt_test",
+            source_type="youtube",
+            external_id="ext2",
+            canonical_url="https://youtube.com/watch?v=test",
+            published_at="2026-01-02",
+            received_at="2026-01-02T10:00:00",
+            title="Вторая",
+            tags="тэг2",
+            topic="Тема",
+            content="содержимое второй заметки",
+        )
+
+        # Также индексируем в SQLite (notes таблица) для метаданных
         state.index_note(
             note_id="note-rebuild-1",
             title="Первая",
             tags="тэг1",
             topic="Тема",
             content="содержимое первой заметки",
+            source_id="tg_test",
+            external_id="ext1",
+            canonical_url="https://t.me/s/test/1",
+            file_path=str(config.vault_path / "Тема" / "2026-01-01_Первая.md"),
+            content_hash="hash1",
         )
         state.index_note(
             note_id="note-rebuild-2",
@@ -57,6 +94,11 @@ class TestStateIndexNoteDedup:
             tags="тэг2",
             topic="Тема",
             content="содержимое второй заметки",
+            source_id="yt_test",
+            external_id="ext2",
+            canonical_url="https://youtube.com/watch?v=test",
+            file_path=str(config.vault_path / "Тема" / "2026-01-02_Вторая.md"),
+            content_hash="hash2",
         )
 
         # Очищаем FTS вручную, как после частичного сбоя
@@ -65,11 +107,20 @@ class TestStateIndexNoteDedup:
         conn.commit()
         assert conn.execute("SELECT COUNT(*) FROM notes_fts").fetchone()[0] == 0
 
-        count = state.rebuild_fts()
+        count = state.rebuild_fts(vault_path=config.vault_path)
         assert count == 2
 
         rows = conn.execute("SELECT COUNT(*) AS cnt FROM notes_fts").fetchone()
         assert rows["cnt"] == 2
+
+        # Проверяем, что контент восстановлен правильно
+        fts_rows = conn.execute(
+            "SELECT note_id, content FROM notes_fts ORDER BY note_id"
+        ).fetchall()
+        assert fts_rows[0]["note_id"] == "note-rebuild-1"
+        assert "содержимое первой заметки" in fts_rows[0]["content"]
+        assert fts_rows[1]["note_id"] == "note-rebuild-2"
+        assert "содержимое второй заметки" in fts_rows[1]["content"]
 
     def test_revision_increments_on_reindex(self, config, state):
         """revision увеличивается при повторной индексации того же note_id."""

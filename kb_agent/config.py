@@ -5,9 +5,7 @@
 
 Упакованные ресурсы (промпты, примеры конфигурации) читаются через
 importlib.resources из пакета kb_agent.resources. Пользовательские данные
-(vault, БД, профиль, источники) размещаются в data_dir (по умолчанию
-PROJECT_ROOT/data при установке из исходников, или KB_DATA_DIR при установке
-через wheel).
+(vault, БД, профиль, источники) размещаются в data_dir.
 """
 
 from __future__ import annotations
@@ -15,42 +13,54 @@ from __future__ import annotations
 import os
 from importlib import resources as importlib_resources
 from pathlib import Path
-from typing import Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from typing_extensions import Self
 
 from kb_agent.utils.logger import configure_file_logging
 
 
-def _find_project_root() -> Path:
-    """Находит корень репозитория, где лежит pyproject.toml.
+def _get_project_root() -> Path | None:
+    """Возвращает корень проекта если запущено из исходников (editable install), иначе None.
 
-    Сначала проверяет текущую рабочую директорию (при запуске pytest из
-    корня репозитория она совпадает с корнем), затем поднимается вверх от
-    расположения этого файла (kb_agent/config.py → корень репозитория).
-    Это нужно для корректной работы в CI, где пакет устанавливается в
-    editable mode и ``__file__`` может указывать в site-packages.
+    Сначала проверяет текущую рабочую директорию (для CI pytest),
+    затем поднимается вверх от расположения этого файла.
+    В установленном wheel __file__ указывает в site-packages, где pyproject.toml нет.
     """
+    # 1. Проверяем CWD (для CI, где pytest запускается из корня репозитория)
     cwd = Path.cwd()
     if (cwd / "pyproject.toml").exists():
         return cwd
-    path = Path(__file__).resolve()
-    for parent in path.parents:
+
+    # 2. Проверяем родительские директории __file__ (режим разработки)
+    here = Path(__file__).resolve()
+    for parent in [here.parent, here.parent.parent, here.parent.parent.parent]:
         if (parent / "pyproject.toml").exists():
             return parent
-    return path.parent.parent
+
+    # 3. В wheel pyproject.toml не найден — возвращаем None
+    return None
 
 
-PROJECT_ROOT = _find_project_root()
+# Корень проекта (только для режима разработки / editable install).
+# В wheel возвращает None.
+PROJECT_ROOT = _get_project_root()
 
 # Пакет с ресурсами (промпты, примеры конфигов), доставляемый с wheel
 RESOURCES_PACKAGE = "kb_agent.resources"
 
-# Пути по умолчанию. Личного абсолютного пути нет: пользовательские данные
-# размещаются под data_dir (по умолчанию PROJECT_ROOT/data при установке из
-# исходников, или KB_DATA_DIR при установке через wheel).
-DEFAULT_DATA_DIR = PROJECT_ROOT / "data"
-DEFAULT_PROMPTS_DIR = PROJECT_ROOT / "config" / "prompts"  # fallback для исходников
+# Базовая директория для пользовательских данных.
+# Приоритет: KB_DATA_DIR env > PROJECT_ROOT/data (dev) > cwd/data (fallback).
+def _default_data_dir() -> Path:
+    if env_data_dir := os.environ.get("KB_DATA_DIR"):
+        return Path(env_data_dir).expanduser().resolve()
+    if PROJECT_ROOT is not None:
+        return PROJECT_ROOT / "data"
+    # Fallback: текущая рабочая директория / data
+    return Path.cwd() / "data"
+
+
+DEFAULT_DATA_DIR = _default_data_dir()
 
 # Имена производных файлов под data_dir (используются, если поле не задано явно).
 DEFAULT_DB_NAME = "state.db"
@@ -88,7 +98,6 @@ def _read_env_file(path: Path) -> dict[str, str]:
         key = key.strip()
         value = value.strip()
         # Удаляем инлайн-комментарии (не внутри кавычек)
-        # Простой подход: если есть # и он не в кавычках
         in_single = False
         in_double = False
         for i, ch in enumerate(value):
@@ -125,7 +134,7 @@ class AppConfig(BaseModel):
     vault_path: Path | None = Field(
         default=None, description="Путь к Obsidian vault (по умолчанию data_dir/vault)"
     )
-    data_dir: Path = Field(default=DEFAULT_DATA_DIR, description="Каталог данных приложения")
+    data_dir: Path = Field(default_factory=_default_data_dir, description="Каталог данных приложения")
     db_path: Path | None = Field(
         default=None, description="Путь к SQLite базе состояния (по умолчанию data_dir/state.db)"
     )
@@ -139,7 +148,9 @@ class AppConfig(BaseModel):
     log_path: Path | None = Field(
         default=None, description="Путь к лог-файлу (по умолчанию data_dir/kb_agent.log)"
     )
-    prompts_dir: Path = Field(default=DEFAULT_PROMPTS_DIR, description="Каталог с промптами")
+    prompts_dir: Path | None = Field(
+        default=None, description="Каталог с пользовательскими промптами (опционально)"
+    )
 
     # LLM
     llm_provider: str = Field(
@@ -195,19 +206,24 @@ class AppConfig(BaseModel):
     def _resolve_paths(self) -> Self:
         """Все пользовательские пути вычисляются от итогового data_dir.
 
-        Относительные пути раскрываются относительно PROJECT_ROOT. Зависимые
-        пути (db, sources, profile, log, vault) по умолчанию размещаются под
-        data_dir, если не заданы явно. Личного абсолютного пути нет.
+        Относительные пути раскрываются относительно:
+        - PROJECT_ROOT (если есть, режим разработки)
+        - текущей рабочей директории (fallback для wheel)
+        Зависимые пути (db, sources, profile, log, vault) по умолчанию размещаются под
+        data_dir, если не заданы явно.
         """
-        # data_dir: относительный → PROJECT_ROOT
+        # Определяем базу для относительных путей
+        path_base = PROJECT_ROOT if PROJECT_ROOT is not None else Path.cwd()
+
+        # data_dir: относительный → path_base
         if not self.data_dir.is_absolute():
-            self.data_dir = PROJECT_ROOT / self.data_dir
+            self.data_dir = (path_base / self.data_dir).resolve()
 
         # vault_path: по умолчанию data_dir/vault
         if self.vault_path is None:
             self.vault_path = self.data_dir / DEFAULT_VAULT_SUBDIR
         elif not self.vault_path.is_absolute():
-            self.vault_path = PROJECT_ROOT / self.vault_path
+            self.vault_path = (path_base / self.vault_path).resolve()
 
         # Производные пути: по умолчанию под data_dir
         defaults = {
@@ -221,11 +237,11 @@ class AppConfig(BaseModel):
             if value is None:
                 setattr(self, field_name, self.data_dir / default_name)
             elif not value.is_absolute():
-                setattr(self, field_name, PROJECT_ROOT / value)
+                setattr(self, field_name, (path_base / value).resolve())
 
-        # prompts_dir: относительный → PROJECT_ROOT
-        if not self.prompts_dir.is_absolute():
-            self.prompts_dir = PROJECT_ROOT / self.prompts_dir
+        # prompts_dir: если задан и относительный → path_base
+        if self.prompts_dir is not None and not self.prompts_dir.is_absolute():
+            self.prompts_dir = (path_base / self.prompts_dir).resolve()
 
         return self
 
@@ -242,10 +258,17 @@ def load_config(env_file: str | None = None) -> AppConfig:
     """
     env_vars: dict[str, str] = {}
 
-    # 1. Сначала читаем стандартный .env в корне проекта (базовый слой)
-    default_env = PROJECT_ROOT / ".env"
-    if default_env.exists():
-        env_vars.update(_read_env_file(default_env))
+    # 1. Сначала читаем стандартный .env (базовый слой)
+    # Ищем .env в PROJECT_ROOT (dev) или в cwd (wheel)
+    default_env_locations = []
+    if PROJECT_ROOT is not None:
+        default_env_locations.append(PROJECT_ROOT / ".env")
+    default_env_locations.append(Path.cwd() / ".env")
+
+    for env_path in default_env_locations:
+        if env_path.exists():
+            env_vars.update(_read_env_file(env_path))
+            break  # читаем только первый найденный
 
     # 2. Затем читаем явный env_file, который перекрывает стандартный
     if env_file:
@@ -285,7 +308,7 @@ def load_config(env_file: str | None = None) -> AppConfig:
         elif env_name in env_vars:
             kwargs[field_name] = env_vars[env_name]
 
-    config = AppConfig(**kwargs)
+    config = AppConfig(**kwargs)  # type: ignore[arg-type]
     # Файловый журнал (rotating) по пути config.log_path, если задан.
     configure_file_logging(config.log_path)
     return config
@@ -298,9 +321,10 @@ def get_prompt_path(prompt_name: str) -> Path | None:
     который читает через importlib.resources.
     """
     # Fallback для разработки из исходников
-    fallback = PROJECT_ROOT / "config" / "prompts" / prompt_name
-    if fallback.exists():
-        return fallback
+    if PROJECT_ROOT is not None:
+        fallback = PROJECT_ROOT / "config" / "prompts" / prompt_name
+        if fallback.exists():
+            return fallback
     return None
 
 
@@ -313,7 +337,7 @@ def get_prompt_text(prompt_name: str, config: AppConfig | None = None) -> str | 
     3. Файл в config/prompts (режим разработки из исходников)
     """
     # 1. Пользовательский файл из config.prompts_dir
-    if config is not None:
+    if config is not None and config.prompts_dir is not None:
         user_path = config.prompts_dir / prompt_name
         if user_path.exists():
             try:

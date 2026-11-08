@@ -1,76 +1,90 @@
-# Participation in kb-agent development
+# Участие в развитии kb-agent
 
-We welcome contributions! This project is a local AI agent for personal knowledge bases. Here's how you can help.
+Мы приветствуем вклад в проект! Это локальный ИИ-агент для персональной базы знаний. Вот как вы можете помочь.
 
-## 🛠️ How to contribute
+## 🛠️ Как участвовать
 
-### 1. Fork and clone
+### 1. Форк и клонирование
 
 ```bash
 git clone https://github.com/DenisZakharov2/personal-kb-agent.git
 cd personal-kb-agent
 ```
 
-### 2. Set up development environment
+### 2. Настройка окружения разработки
 
 ```bash
-# Create virtual environment
+# Создать виртуальное окружение
 python3 -m venv .venv
 source .venv/bin/activate
 
-# Install package in development mode with dev dependencies
+# Установить пакет в режиме разработки с dev-зависимостями
 pip install -e ".[dev]"
 
-# Install pre-commit hooks (optional)
+# Установить pre-commit хуки (опционально)
 pip install ruff
 ruff check .
 ```
 
-### 3. Create a branch
+### 3. Создание ветки
 
 ```bash
-git checkout -b feature/your-feature-name
+git checkout -b feature/ваша-фича
+# или
+git checkout -b fix/ваш-фикс
 ```
 
-### 4. Make changes and test
+### 4. Внесение изменений и тестирование
 
 ```bash
-# Run linting
+# Линтинг
 ruff check .
 
-# Run tests (when tests are added)
-pytest
+# Типизация
+mypy kb_agent
 
-# Verify CLI works
+# Тесты
+pytest -v
+
+# Проверка CLI
 kb-agent --help
 kb-agent sources list
 ```
 
-### 5. Commit and push
+### 5. Коммит и пуш
+
+Используем [Conventional Commits](https://www.conventionalcommits.org/ru/v1.0.0/):
 
 ```bash
 git add .
-git commit -m "feat: describe your change"
-git push origin feature/your-feature-name
+git commit -m "feat: описание вашей фичи"
+# или
+git commit -m "fix: описание исправления"
+git push origin feature/ваша-фича
 ```
 
-### 6. Open a Pull Request
+### 6. Pull Request
 
-Describe what you changed and why. Screenshots or CLI output are welcome.
+Откройте PR с описанием:
+- Что изменено и почему
+- Скриншоты или вывод CLI (если применимо)
+- Связанные Issue (если есть)
 
 ---
 
-## 📁 Project structure
+## 📁 Структура проекта
 
 ```
 personal-kb-agent/
-├── README.md              # Project documentation
-├── LICENSE                # MIT license
-├── pyproject.toml         # Project metadata and dependencies
-├── .env.example           # Environment variables template
-├── .gitignore             # Files excluded from git
-├── kb_agent/              # Main package
-│   ├── cli/               # CLI commands (Typer)
+├── README.md              # Документация проекта
+├── LICENSE                # MIT лицензия
+├── pyproject.toml         # Метаданные и зависимости
+├── .env.example           # Шаблон переменных окружения
+├── .gitignore             # Исключения из git
+├── SECURITY.md            # Политика безопасности
+├── CHANGELOG.md           # История изменений
+├── kb_agent/              # Основной пакет
+│   ├── cli/               # CLI команды (Typer)
 │   │   ├── commands/
 │   │   │   ├── ask.py           # ask, search, insights, update check
 │   │   │   ├── feedback.py      # feedback rate/tell/metrics/list
@@ -79,87 +93,119 @@ personal-kb-agent/
 │   │   │   ├── process.py       # process run/digest/status
 │   │   │   ├── self_improve.py  # self-improve rollback
 │   │   │   └── sources.py       # sources add/remove/enable/disable/list
-│   │   ├── output.py            # Shared JSON output helper
-│   │   └── main.py              # CLI entry point
-│   ├── core/                # Core logic
+│   │   ├── output.py            # Общий JSON output helper
+│   │   └── main.py              # Точка входа CLI
+│   ├── core/                # Ядро логики
 │   │   ├── interview.py         # InterviewManager
-│   │   ├── insights.py          # InsightsEngine (themes, gaps, links)
-│   │   ├── prompts.py           # Versioned system prompts (prompt_history)
+│   │   ├── insights.py          # InsightsEngine (темы, пробелы, связи)
+│   │   ├── prompts.py           # Версионированные системные промпты
 │   │   ├── relevance.py         # Relevance Gate
-│   │   ├── search.py            # FTS5 search + LLM answer
+│   │   ├── search.py            # FTS5 поиск + LLM ответ
 │   │   ├── self_improvement.py  # SelfImprovementEngine
 │   │   └── update.py            # KnowledgeUpdater
-│   ├── processing/            # Processing pipeline
-│   │   ├── llm_client.py        # LLM client (OpenAI-compatible, retries)
-│   │   └── pipeline.py          # Pipeline (collect → relevance → LLM → vault)
-│   ├── sources/               # Data sources
-│   │   ├── base.py              # BaseSource abstract class
+│   ├── processing/          # Конвейер обработки
+│   │   ├── llm_client.py        # LLM клиент (OpenAI-совместимый, ретраи)
+│   │   └── pipeline.py          # Pipeline (сбор → relevance → LLM → vault)
+│   ├── sources/             # Источники данных
+│   │   ├── base.py              # BaseSource абстрактный класс
 │   │   ├── registry.py          # SourceRegistry (sources.yaml)
-│   │   ├── manager.py           # SourceManager (collect all/one)
-│   │   ├── telegram.py          # Telegram collector
-│   │   └── youtube.py           # YouTube collector
-│   ├── storage/               # Storage layer
+│   │   ├── manager.py           # SourceManager (сбор всех/одного)
+│   │   ├── telegram.py          # Telegram коллектор
+│   │   └── youtube.py           # YouTube коллектор
+│   ├── storage/             # Слой хранения
 │   │   ├── state.py             # StateManager (SQLite)
 │   │   ├── vault.py             # VaultManager (Obsidian vault)
 │   │   ├── catalog.py           # CatalogGenerator (Каталог.md)
-│   │   └── pending.py           # PendingManager (pending changes)
-│   ├── agents/                # External agent integration
-│   │   └── mcp_server.py        # MCP server (kb-agent mcp-serve)
-│   ├── feedback/              # Feedback collection
+│   │   └── pending.py           # PendingManager (pending изменения)
+│   ├── agents/              # Интеграция с внешними агентами
+│   │   └── mcp_server.py        # MCP сервер (kb-agent mcp-serve)
+│   ├── feedback/            # Сбор обратной связи
 │   │   ├── collector.py         # FeedbackCollector
 │   │   └── metrics.py           # FeedbackMetricsCollector
-│   ├── config.py              # Application configuration
+│   ├── config.py            # Конфигурация приложения
 │   ├── utils/
-│   │   └── logger.py            # Logging setup
+│   │   └── logger.py            # Настройка логирования
 │   └── __init__.py
-├── config/                    # Configuration templates
-│   ├── sources.example.yaml   # Sources template
-│   ├── user_profile.example.yaml  # Profile template
+├── config/                  # Шаблоны конфигурации (dev fallback)
+│   ├── sources.example.yaml
+│   ├── user_profile.example.yaml
 │   └── prompts/
-│       ├── agent_prompt.md    # System prompt (search/answer)
-│       ├── answer_prompt.md   # Answer prompt (search/answer)
-│       └── summarize_prompt.md  # Summarize prompt (pipeline)
-├── scripts/                   # Utility scripts
-│   ├── prepare_stage4_write.sh # Environment check (Stage 4)
-│   └── legacy/                # Legacy collectors (_queue.jsonl), not used by app
-├── tests/                     # Tests (38 test files, 297 tests)
-├── docs/                      # Documentation
-└── SKILL.md                   # MCP skill for AI agents
+│       ├── agent_prompt.md
+│       ├── answer_prompt.md
+│       └── summarize_prompt.md
+├── kb_agent/resources/      # Ресурсы, упакованные в wheel
+│   ├── prompts/
+│   │   ├── agent_prompt.md
+│   │   ├── answer_prompt.md
+│   │   └── summarize_prompt.md
+│   └── config/
+│       ├── sources.example.yaml
+│       └── user_profile.example.yaml
+├── scripts/                 # Утилиты
+│   ├── prepare_stage4_write.sh
+│   └── legacy/              # Legacy коллекторы (_queue.jsonl), не используются
+├── tests/                   # Тесты (297 тестов)
+├── docs/                    # Документация
+│   ├── architecture.md
+│   ├── workflow.md
+│   └── catalog.md
+└── SKILL.md                 # MCP skill для ИИ-агентов
 ```
 
 ---
 
-## 🎯 Areas where help is needed
+## 🎯 Где нужна помощь
 
-- **New sources**: Implement `BaseSource` for websites, RSS, arXiv, personal files
-- **Tests**: Add pytest coverage for pipeline, relevance gate, storage
-- **Documentation**: Translate README to English, add more examples
-- **CI/CD**: Add GitHub Actions for linting and testing
-- **Packaging**: Publish to PyPI
-
----
-
-## 📝 Commit conventions
-
-Use conventional commits:
-
-- `feat:` — new feature
-- `fix:` — bug fix
-- `docs:` — documentation changes
-- `refactor:` — code refactoring
-- `test:` — adding tests
-- `chore:` — maintenance tasks
-
-Example: `feat: add YouTube source with subtitles`
+- **Новые источники**: Реализуйте `BaseSource` для веб-сайтов, RSS, arXiv, личных файлов
+- **Тесты**: Добавьте pytest покрытие для pipeline, relevance gate, storage
+- **Документация**: Добавьте больше примеров, переведите на английский
+- **CI/CD**: Улучшите GitHub Actions (уже настроен базовый)
+- **Публикация**: Помогите с публикацией в PyPI (trusted publishing)
+- **Локализация**: Переведите README и docs на английский
 
 ---
 
-## 📄 License
+## 📝 Конвенции коммитов
 
-By contributing, you agree that your contributions will be licensed under the MIT License.
+Используйте Conventional Commits:
+
+- `feat:` — новая фича
+- `fix:` — багфикс
+- `docs:` — документация
+- `refactor:` — рефакторинг
+- `test:` — тесты
+- `chore:` — обслуживание
+- `security:` — безопасность
+- `perf:` — производительность
+
+Пример: `feat: add RSS source with article extraction`
 
 ---
 
-## ❓ Questions?
+## 🧪 Написание тестов
 
-Open an [issue](https://github.com/DenisZakharov2/personal-kb-agent/issues) or start a discussion.
+- Тесты кладутся в `tests/` с префиксом `test_`
+- Используйте `pytest` и фикстуры из `conftest.py`
+- Для изоляции используйте временные директории (`tmp_path`)
+- Мокайте внешние вызовы (LLM, HTTP, yt-dlp)
+
+Пример:
+```python
+def test_relevance_gate_filters_spam():
+    gate = RelevanceGate({"topics": ["AI"], "relevance_threshold": 0.3})
+    result = gate.check("Розыгрыш iPhone 15!", "Спам")
+    assert result.relevant is False
+    assert "спам" in result.reason.lower()
+```
+
+---
+
+## 📄 Лицензия
+
+Участвуя, вы соглашаетесь, что ваши вклады будут лицензированы под MIT License.
+
+---
+
+## ❓ Вопросы?
+
+Откройте [Issue](https://github.com/DenisZakharov2/personal-kb-agent/issues) или начните [Discussion](https://github.com/DenisZakharov2/personal-kb-agent/discussions).
