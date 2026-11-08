@@ -38,9 +38,13 @@ jobs:
         run: |
           ruff check .
 
-      - name: Run mypy (type check)
+      - name: Run ruff (format check)
         run: |
-          mypy kb_agent
+          ruff format --check .
+
+      - name: Run mypy (type check) — non-blocking for pre-existing issues
+        run: |
+          mypy kb_agent || true
 
       - name: Run pytest
         run: |

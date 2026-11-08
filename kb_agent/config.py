@@ -49,6 +49,7 @@ PROJECT_ROOT = _get_project_root()
 # Пакет с ресурсами (промпты, примеры конфигов), доставляемый с wheel
 RESOURCES_PACKAGE = "kb_agent.resources"
 
+
 # Базовая директория для пользовательских данных.
 # Приоритет: KB_DATA_DIR env > PROJECT_ROOT/data (dev) > cwd/data (fallback).
 def _default_data_dir() -> Path:
@@ -134,7 +135,9 @@ class AppConfig(BaseModel):
     vault_path: Path | None = Field(
         default=None, description="Путь к Obsidian vault (по умолчанию data_dir/vault)"
     )
-    data_dir: Path = Field(default_factory=_default_data_dir, description="Каталог данных приложения")
+    data_dir: Path = Field(
+        default_factory=_default_data_dir, description="Каталог данных приложения"
+    )
     db_path: Path | None = Field(
         default=None, description="Путь к SQLite базе состояния (по умолчанию data_dir/state.db)"
     )
