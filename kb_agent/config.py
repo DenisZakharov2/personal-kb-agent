@@ -21,10 +21,27 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from kb_agent.utils.logger import configure_file_logging
 
-# Корень проекта (для установки из исходников). При установке через wheel
-# PROJECT_ROOT указывает в site-packages, поэтому пользовательские данные
-# должны браться из KB_DATA_DIR / data_dir, а не отсюда.
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+def _find_project_root() -> Path:
+    """Находит корень репозитория, где лежит pyproject.toml.
+
+    Сначала проверяет текущую рабочую директорию (при запуске pytest из
+    корня репозитория она совпадает с корнем), затем поднимается вверх от
+    расположения этого файла (kb_agent/config.py → корень репозитория).
+    Это нужно для корректной работы в CI, где пакет устанавливается в
+    editable mode и ``__file__`` может указывать в site-packages.
+    """
+    cwd = Path.cwd()
+    if (cwd / "pyproject.toml").exists():
+        return cwd
+    path = Path(__file__).resolve()
+    for parent in path.parents:
+        if (parent / "pyproject.toml").exists():
+            return parent
+    return path.parent.parent
+
+
+PROJECT_ROOT = _find_project_root()
 
 # Пакет с ресурсами (промпты, примеры конфигов), доставляемый с wheel
 RESOURCES_PACKAGE = "kb_agent.resources"

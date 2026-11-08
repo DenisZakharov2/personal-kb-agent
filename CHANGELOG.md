@@ -5,6 +5,13 @@
 Формат основан на [Keep a Changelog](https://keepachangelog.com/ru/1.0.0/),
 и проект следует [Semantic Versioning](https://semver.org/lang/ru/).
 
+## [0.2.2] - 2026-11-07
+
+### Исправлено
+- `rebuild_fts()` и `index_note()` теперь корректно хранят и индексируют текст заметки (`content`) в таблице `notes` — добавлена миграция шага 24 (`ALTER TABLE notes ADD COLUMN content`)
+- `PROJECT_ROOT` в `config.py` теперь ищет корень репозитория через `pyproject.toml` вместо жёсткого `parent.parent` — исправлены тесты в CI (поиск упакованных промптов, `sources.example.yaml`, `eval_set.json`)
+- Тест `test_kb_data_dir_moves_unset_paths` теперь задаёт `KB_VAULT_PATH`/`KB_LOG_PATH` через `monkeypatch` вместо зависимости от `.env`
+
 ## [0.2.1] - 2026-11-07
 
 ### Исправлено

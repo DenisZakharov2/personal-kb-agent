@@ -360,6 +360,12 @@ _SCHEMA = [
         ALTER TABLE raw_queue ADD COLUMN note_id TEXT;
         """,
     ),
+    (
+        24,
+        """
+        ALTER TABLE notes ADD COLUMN content TEXT;
+        """,
+    ),
 ]
 
 SCHEMA_VERSION = max(v for v, _ in _SCHEMA)
@@ -695,8 +701,9 @@ class StateManager:
             c.execute(
                 """
                 INSERT INTO notes (note_id, title, tags, topic, source_id, external_id, canonical_url,
-                                   file_path, content_hash, revision, is_private, is_archived, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+                                   file_path, content_hash, content, revision, is_private, is_archived,
+                                   created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
                 ON CONFLICT(note_id) DO UPDATE SET
                     title = excluded.title,
                     tags = excluded.tags,
@@ -706,6 +713,7 @@ class StateManager:
                     canonical_url = excluded.canonical_url,
                     file_path = excluded.file_path,
                     content_hash = excluded.content_hash,
+                    content = excluded.content,
                     revision = notes.revision + 1,
                     is_private = excluded.is_private,
                     is_archived = excluded.is_archived,
@@ -721,6 +729,7 @@ class StateManager:
                     canonical_url,
                     file_path,
                     content_hash,
+                    content,
                     revision,
                     is_private,
                     is_archived,

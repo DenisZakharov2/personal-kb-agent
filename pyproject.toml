@@ -1,6 +1,6 @@
 [project]
 name = "personal-kb-agent"
-version = "0.2.1"
+version = "0.2.2"
 description = "Второй мозг — личный ИИ-агент для базы знаний: сбор из Telegram и YouTube, суммаризация, поиск и доступ для AI-агентов через MCP"
 readme = "README.md"
 requires-python = ">=3.10"
