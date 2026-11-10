@@ -14,28 +14,13 @@ from bs4 import BeautifulSoup
 
 from kb_agent.storage.state import StateManager
 from kb_agent.utils.logger import setup_logger
+from kb_agent.utils.spam import SPAM_KEYWORDS, is_spam
 
 logger = setup_logger("kb_agent.sources.telegram")
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36"
 }
-
-SPAM_KEYWORDS = [
-    "розыгрыш",
-    "giveaway",
-    "подпишись на канал",
-    "подписаться на",
-    "реклама",
-    "вложения",
-    "заработай",
-    "инвестируй",
-    "купи",
-    "промокод",
-    "скидка",
-    "розыгрыш приза",
-    "бесплатный розыгрыш",
-]
 
 
 def _extract_message_id(link: str) -> str:
@@ -52,8 +37,8 @@ def _clean_html(raw_html: str | None) -> str:
 
 
 def _is_spam(text: str) -> bool:
-    lower = text.lower()
-    return any(kw in lower for kw in SPAM_KEYWORDS)
+    """Проверка на спам (алиас на ``kb_agent.utils.spam.is_spam``)."""
+    return is_spam(text)
 
 
 def fetch_channel_posts(channel: str, limit: int) -> list[dict]:

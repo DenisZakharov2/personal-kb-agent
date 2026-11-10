@@ -19,6 +19,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from kb_agent.utils.spam import SPAM_PATTERNS
+
 _WORD_RE = re.compile(r"[а-яёa-z0-9]{2,}", re.IGNORECASE)
 
 # Русские и английские стоп-слова (союзы, предлоги, частицы, местоимения)
@@ -217,12 +219,6 @@ STOP_WORDS = {
 }
 
 DEFAULT_THRESHOLD = 0.3
-
-# Спам-паттерны с границами слов
-SPAM_PATTERNS = re.compile(
-    r"\b(?:розыгрыш\w*|giveaway|промокод\w*|бесплатный\s+розыгрыш|подпишись\s+на\s+канал)\b",
-    re.IGNORECASE,
-)
 
 
 @dataclass
