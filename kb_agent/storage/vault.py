@@ -16,6 +16,7 @@ from pathlib import Path
 import yaml
 
 from kb_agent.config import AppConfig
+from kb_agent.storage.state import StateManager
 from kb_agent.utils.frontmatter import sanitize_frontmatter
 from kb_agent.utils.logger import setup_logger
 from kb_agent.utils.slug import slugify
@@ -44,8 +45,9 @@ def atomic_write_text(path: Path, text: str, backup: bool = True) -> None:
 class VaultManager:
     """Работа с файловой системой Obsidian vault."""
 
-    def __init__(self, config: AppConfig) -> None:
+    def __init__(self, config: AppConfig, state: StateManager | None = None) -> None:
         self.config = config
+        self.state = state
         self.vault_path = Path(config.vault_path)
         self.vault_path.mkdir(parents=True, exist_ok=True)
 
@@ -55,6 +57,30 @@ class VaultManager:
         folder = self.vault_path / folder_name
         folder.mkdir(parents=True, exist_ok=True)
         return folder
+
+    def _find_note_file_by_state(self, note_id: str) -> Path | None:
+        """Быстрый поиск файла заметки по note_id через StateManager.
+
+        Использует ``state.get_note(note_id)`` → ``file_path`` вместо
+        O(n) сканирования всех файлов vault. Возвращает Path только если
+        запись есть в БД и файл физически существует на диске (защита от
+        расхождений между БД и ФС).
+        """
+        if self.state is None:
+            return None
+        try:
+            row = self.state.get_note(note_id)
+        except Exception:  # noqa: BLE001
+            return None
+        if not row:
+            return None
+        file_path = row.get("file_path")
+        if not file_path:
+            return None
+        path = Path(file_path)
+        if path.exists() and path.is_file():
+            return path
+        return None
 
     def find_note_file(self, note_id: str) -> Path | None:
         """Находит файл заметки по note_id из frontmatter.
@@ -100,7 +126,9 @@ class VaultManager:
         ``previous_note_id`` зарезервирован для будущего версионирования
         заметок (актуализация при изменении источника).
         """
-        existing = self.find_note_file(note_id)
+        # Быстрый поиск через StateManager (O(1) по file_path в БД) с fallback
+        # на полное сканирование vault (O(n)) для совместимости при отсутствии state.
+        existing = self._find_note_file_by_state(note_id) or self.find_note_file(note_id)
         if existing is not None:
             file_path = existing
             # Тема берём из существующего файла, если не передана явно через topic
@@ -161,7 +189,7 @@ class VaultManager:
         архивной заметки безопасен (идемпотентен): если файл уже в архиве,
         возвращается его текущий путь без перемещения.
         """
-        path = self.find_note_file(note_id)
+        path = self._find_note_file_by_state(note_id) or self.find_note_file(note_id)
         if path is None:
             return None
         if path.parent.name == "Архив":
@@ -188,8 +216,8 @@ class VaultManager:
 
         Возвращает отчёт с путями файлов.
         """
-        keep_path = self.find_note_file(keep_note_id)
-        drop_path = self.find_note_file(drop_note_id)
+        keep_path = self._find_note_file_by_state(keep_note_id) or self.find_note_file(keep_note_id)
+        drop_path = self._find_note_file_by_state(drop_note_id) or self.find_note_file(drop_note_id)
 
         report: dict = {
             "keep_note_id": keep_note_id,
@@ -243,7 +271,7 @@ class VaultManager:
         ``topic`` — целевая тема (по умолчанию берётся из frontmatter).
         Возвращает новый путь или None, если файл не найден.
         """
-        path = self.find_note_file(note_id)
+        path = self._find_note_file_by_state(note_id) or self.find_note_file(note_id)
         if path is None:
             # Ищем в корне и в архиве (list_notes обходит все подпапки vault)
             return None
