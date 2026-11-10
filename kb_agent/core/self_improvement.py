@@ -107,6 +107,15 @@ class SelfImprovementEngine:
         )
         diff_text = "".join(diff_lines) if diff_lines else "(изменений нет)"
 
+        # Блокируем создание предложения без изменений (P2-07):
+        # пустой diff не имеет смысла сохранять в БД и предлагать на_confirm.
+        if not diff_lines:
+            raise ValueError(
+                f"Предложение для промпта '{prompt_name}' не создано: "
+                f"новое содержимое совпадает с текущей версией {current_version} "
+                f"(изменений нет)."
+            )
+
         proposal_id = self._next_proposal_id()
         self.state.save_proposal(
             proposal_id=proposal_id,

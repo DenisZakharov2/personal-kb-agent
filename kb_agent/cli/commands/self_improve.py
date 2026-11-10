@@ -216,7 +216,15 @@ def self_improve_propose_prompt(
     try:
         state.init_db()
         engine = SelfImprovementEngine(state)
-        proposal = engine.propose_prompt_change(prompt_name, new_content, reason)
+        try:
+            proposal = engine.propose_prompt_change(prompt_name, new_content, reason)
+        except ValueError as exc:
+            msg = f"Ошибка: {exc}"
+            if json_output:
+                _output_json({"error": msg, "prompt_name": prompt_name})
+            else:
+                typer.echo(msg, err=True)
+            raise typer.Exit(code=1)
 
         if json_output:
             _output_json(
