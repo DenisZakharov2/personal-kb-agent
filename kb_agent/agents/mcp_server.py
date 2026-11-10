@@ -16,6 +16,8 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
+from kb_agent import __version__
+
 from mcp.server import Server
 from mcp.server.models import InitializationOptions
 from mcp.server.stdio import stdio_server
@@ -919,7 +921,7 @@ async def main() -> None:
             write_stream,
             InitializationOptions(
                 server_name="kb-agent",
-                server_version="0.2.0",
+                server_version=__version__,
                 capabilities=ServerCapabilities(
                     tools=ToolsCapability(listChanged=False),
                 ),
