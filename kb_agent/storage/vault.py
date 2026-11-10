@@ -16,6 +16,7 @@ from pathlib import Path
 import yaml
 
 from kb_agent.config import AppConfig
+from kb_agent.utils.frontmatter import sanitize_frontmatter
 from kb_agent.utils.logger import setup_logger
 from kb_agent.utils.slug import slugify
 
@@ -289,41 +290,6 @@ class VaultManager:
         """Читает содержимое заметки."""
         return path.read_text(encoding="utf-8")
 
-    @staticmethod
-    def _sanitize_frontmatter(fm_text: str) -> str:
-        """Экранирует YAML-значения, которые ``safe_load`` не примет вне кавычек.
-
-        PyYAML не принимает скаляр, начинающийся с ``@``, или строку с
-        ``: `` внутри значения — это ломает mapping. Оборачиваем такие
-        значения в одинарные кавычки, если они ещё не экранированы.
-        """
-        fixed_lines: list[str] = []
-        for line in fm_text.splitlines():
-            stripped = line.strip()
-            if not stripped or stripped.startswith("#"):
-                fixed_lines.append(line)
-                continue
-            colon_pos = stripped.find(": ")
-            if colon_pos == -1:
-                fixed_lines.append(line)
-                continue
-            key = stripped[:colon_pos]
-            value = stripped[colon_pos + 2 :]
-            if (
-                value
-                and value[0] not in ('"', "'")
-                and (
-                    value.startswith(("@", "- ", "#", "*", "[", "{"))
-                    or ": " in value
-                    or value.lower() in ("true", "false", "null", "~")
-                )
-            ):
-                indent = line[: len(line) - len(line.lstrip())]
-                value_escaped = "'" + value.replace("'", "''") + "'"
-                line = f"{indent}{key}: {value_escaped}"
-            fixed_lines.append(line)
-        return "\n".join(fixed_lines)
-
     def parse_note(self, path: Path) -> dict:
         """Разбирает .md-файл заметки на frontmatter и тело.
 
@@ -347,7 +313,7 @@ class VaultManager:
             except yaml.YAMLError:
                 # Пробуем починить значения, начинающиеся с @, и повторить парсинг.
                 try:
-                    loaded = yaml.safe_load(self._sanitize_frontmatter(frontmatter_text))
+                    loaded = yaml.safe_load(sanitize_frontmatter(frontmatter_text))
                     if isinstance(loaded, dict):
                         data = loaded
                 except yaml.YAMLError as exc:

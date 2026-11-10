@@ -10,6 +10,7 @@ from pathlib import Path
 import yaml
 
 from kb_agent.storage.vault import VaultManager, atomic_write_text
+from kb_agent.utils.frontmatter import sanitize_frontmatter
 from kb_agent.utils.logger import setup_logger
 
 logger = setup_logger("kb_agent.storage.catalog")
@@ -20,44 +21,6 @@ class CatalogGenerator:
 
     def __init__(self, vault_manager: VaultManager) -> None:
         self.vault = vault_manager
-
-    @staticmethod
-    def _sanitize_frontmatter(fm_text: str) -> str:
-        """Экранирует YAML-значения, которые ``safe_load`` не примет вне кавычек.
-
-        PyYAML не принимает:
-        - скаляр, начинающийся с ``@`` (например ``источник: @ragnarokzone``),
-        - строку с ``: `` внутри значения (например ``title: Что-то: с двоеточием``),
-        что ломает mapping. Оборачиваем такие значения в одинарные кавычки,
-        если они ещё не экранированы.
-        """
-        fixed_lines: list[str] = []
-        for line in fm_text.splitlines():
-            stripped = line.strip()
-            if not stripped or stripped.startswith("#"):
-                fixed_lines.append(line)
-                continue
-            colon_pos = stripped.find(": ")
-            if colon_pos == -1:
-                fixed_lines.append(line)
-                continue
-            key = stripped[:colon_pos]
-            value = stripped[colon_pos + 2 :]
-            # Не в кавычках и содержит спецсимволы YAML — экранируем.
-            if (
-                value
-                and value[0] not in ('"', "'")
-                and (
-                    value.startswith(("@", "- ", "#", "*", "[", "{"))
-                    or ": " in value
-                    or value.lower() in ("true", "false", "null", "~")
-                )
-            ):
-                indent = line[: len(line) - len(line.lstrip())]
-                value_escaped = "'" + value.replace("'", "''") + "'"
-                line = f"{indent}{key}: {value_escaped}"
-            fixed_lines.append(line)
-        return "\n".join(fixed_lines)
 
     @staticmethod
     def _parse_frontmatter(content: str, note_path: Path | None = None) -> dict:
@@ -73,7 +36,7 @@ class CatalogGenerator:
             # Пробуем починить значения, начинающиеся с @, и повторить парсинг
             # (старые заметки могли быть записаны до экранирования).
             try:
-                return yaml.safe_load(CatalogGenerator._sanitize_frontmatter(fm_text)) or {}
+                return yaml.safe_load(sanitize_frontmatter(fm_text)) or {}
             except Exception as exc:  # noqa: BLE001
                 logger.warning(
                     "Не удалось разобрать frontmatter %s: %s",
