@@ -12,6 +12,7 @@ Anthropic (через совместимый прокси), Ollama и др.
 from __future__ import annotations
 
 import json
+import random
 import re
 import time
 from dataclasses import dataclass
@@ -81,6 +82,14 @@ class LLMClient:
         self.provider = config.llm_provider
         self.timeout = float(getattr(config, "llm_timeout", 60.0))
         self.max_retries = max(0, int(getattr(config, "llm_max_retries", 2)))
+        # Circuit breaker: после N подряд неудачных запросов к LLM дальнейшие
+        # вызовы блокируются без сетевого запроса, чтобы не тратить квоту/деньги
+        # при постоянных ошибках провайдера (429, 5xx, сетевые сбои).
+        self.circuit_failures = 0
+        self.max_circuit_failures = max(1, int(getattr(config, "llm_max_circuit_failures", 5)))
+        self.circuit_reset_after = float(getattr(config, "llm_circuit_reset_after", 300.0))
+        self.circuit_opened_at: float | None = None
+        self.circuit_open = False
         # Ответ последнего вызова complete(): нужна для записи generation_log
         # (токены, задержка, модель) без изменения сигнатуры методов.
         self.last_response: LLMResponse | None = None
@@ -100,6 +109,28 @@ class LLMClient:
             headers["HTTP-Referer"] = "https://github.com/DenisZakharov2/personal-kb-agent"
             headers["X-Title"] = "personal-kb-agent"
         return headers
+
+    def _record_success(self) -> None:
+        """Сбрасывает circuit breaker после успешного запроса."""
+        if self.circuit_failures > 0 or self.circuit_open:
+            logger.info(
+                "LLM (%s): запрос успешен, circuit breaker сброшен", self.provider
+            )
+        self.circuit_failures = 0
+        self.circuit_open = False
+        self.circuit_opened_at = None
+
+    def _record_failure(self) -> None:
+        """Инкрементирует счётчик неудач и открывает circuit breaker при превышении лимита."""
+        self.circuit_failures += 1
+        if self.circuit_failures >= self.max_circuit_failures and not self.circuit_open:
+            self.circuit_open = True
+            self.circuit_opened_at = time.time()
+            logger.warning(
+                "LLM (%s): circuit breaker открыт после %s неудач подряд",
+                self.provider,
+                self.circuit_failures,
+            )
 
     def complete(
         self,
@@ -131,6 +162,27 @@ class LLMClient:
             )
             return self.last_response
 
+        # Circuit breaker: если открыт, проверяем, не прошло ли время сброса.
+        now = time.time()
+        if self.circuit_open:
+            if self.circuit_opened_at is not None and now - self.circuit_opened_at >= self.circuit_reset_after:
+                # Half-open: пробуем ещё один запрос, если успеет — сбросим circuit.
+                self.circuit_open = False
+                self.circuit_failures = 0
+                self.circuit_opened_at = None
+                logger.info("LLM (%s): circuit breaker half-open, пробный запрос", self.provider)
+            else:
+                remaining = self.circuit_reset_after - (now - (self.circuit_opened_at or now))
+                self.last_response = LLMResponse(
+                    text="",
+                    model=model,
+                    prompt_tokens=0,
+                    completion_tokens=0,
+                    latency_ms=0.0,
+                    error=f"LLM circuit breaker открыт (повтор через {remaining:.0f} с)",
+                )
+                return self.last_response
+
         payload = {
             "model": model,
             "messages": messages,
@@ -158,11 +210,13 @@ class LLMClient:
                         attempt + 1,
                         attempts - 1,
                     )
-                    time.sleep(0.5 * (2**attempt))
+                    time.sleep(0.5 * (2**attempt) + random.uniform(0, 0.5))
+                    self._record_failure()
                     continue
 
                 if resp.status_code != 200:
                     logger.error("LLM ошибка %s: %s", resp.status_code, resp.text[:500])
+                    self._record_failure()
                     self.last_response = LLMResponse(
                         text="",
                         model=model,
@@ -184,6 +238,7 @@ class LLMClient:
                     completion_tokens=usage.get("completion_tokens", 0),
                     latency_ms=latency_ms,
                 )
+                self._record_success()
                 return self.last_response
             except Exception as exc:
                 last_error = str(exc)
@@ -195,9 +250,11 @@ class LLMClient:
                         attempt + 1,
                         attempts - 1,
                     )
-                    time.sleep(0.5 * (2**attempt))
+                    time.sleep(0.5 * (2**attempt) + random.uniform(0, 0.5))
+                    self._record_failure()
                     continue
                 logger.exception("Ошибка при вызове LLM API")
+                self._record_failure()
                 self.last_response = LLMResponse(
                     text="",
                     model=model,
