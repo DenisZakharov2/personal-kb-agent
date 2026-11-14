@@ -49,3 +49,17 @@ def state(config):
     s.init_db()
     yield s
     s.close()
+
+
+@pytest.fixture(autouse=True)
+def _reset_mcp_runtime():
+    """Закрывает кэш MCP-сервера после каждого теста.
+
+    MCP-сервер держит StateManager в кэше уровня процесса (чтобы не открывать
+    новое соединение на каждый вызов инструмента). В тестах кэш сбрасывается,
+    чтобы соединения не «протекали» между тестами.
+    """
+    yield
+    from kb_agent.agents.mcp_server import reset_runtime
+
+    reset_runtime()

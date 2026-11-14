@@ -288,7 +288,7 @@ class PendingManager:
         """Применяет подтверждённое изменение в зависимости от действия.
 
         Выполняется в переданном соединении (или собственном) без отдельного
-        коммита, чтобы confirmaцияremaining оставалась атомарной транзакцией.
+        коммита, чтобы подтверждение оставалось атомарной транзакцией.
         """
         c = conn or self.state.connect()
         own = conn is None
@@ -405,7 +405,7 @@ class PendingManager:
         """Обновляет user_profile.yaml на основе параметров."""
         if config is None:
             config = load_config()
-        profile_path = config.profile_path
+        profile_path = config.profile_file
 
         if profile_path.exists():
             data = yaml.safe_load(profile_path.read_text(encoding="utf-8")) or {}
@@ -421,7 +421,7 @@ class PendingManager:
         profile_path.parent.mkdir(parents=True, exist_ok=True)
         atomic_write_text(
             profile_path,
-            yaml.dump(data, allow_unicode=True, sort_keys=False),
+            yaml.safe_dump(data, allow_unicode=True, sort_keys=False),
             backup=True,
         )
         logger.info("Профиль обновлён: %s", profile_path)

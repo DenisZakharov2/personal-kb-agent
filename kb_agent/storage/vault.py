@@ -48,7 +48,7 @@ class VaultManager:
     def __init__(self, config: AppConfig, state: StateManager | None = None) -> None:
         self.config = config
         self.state = state
-        self.vault_path = Path(config.vault_path)
+        self.vault_path = Path(config.vault_dir)
         self.vault_path.mkdir(parents=True, exist_ok=True)
 
     def _topic_folder(self, topic: str) -> Path:

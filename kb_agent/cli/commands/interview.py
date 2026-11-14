@@ -41,7 +41,7 @@ def interview_init() -> None:
 
     # Сеем базовые версии промптов в prompt_history, чтобы работали
     # откат промпта (self-improve rollback) и MCP-инструмент kb_revert_prompt.
-    state = StateManager(config.db_path)
+    state = StateManager(config.db_file)
     try:
         state.init_db()
         ensure_prompt_seeded(config, state)
@@ -63,7 +63,7 @@ def interview_status(
     config = load_config()
     interview = InterviewManager(config)
 
-    state = StateManager(config.db_path)
+    state = StateManager(config.db_file)
     try:
         version = state.init_db()
         stats = state.stats()
@@ -73,7 +73,7 @@ def interview_status(
                 {
                     "profile_exists": interview.profile_exists(),
                     "profile_path": str(interview.profile_path),
-                    "db_path": str(config.db_path),
+                    "db_path": str(config.db_file),
                     "schema_version": version,
                     "stats": stats,
                 }
@@ -85,7 +85,7 @@ def interview_status(
         else:
             typer.echo("Профиль: не создан. Запустите 'kb-agent interview init'.")
 
-        typer.echo(f"База данных: {config.db_path} (схема v{version})")
+        typer.echo(f"База данных: {config.db_file} (схема v{version})")
         typer.echo(f"Элементов в очереди: {stats.get('raw_queue', 0)}")
         typer.echo(f"Обратная связь: {stats.get('feedback', 0)}")
     finally:
@@ -104,7 +104,7 @@ def import_core(
     ),
 ) -> None:
     config = load_config()
-    state = StateManager(config.db_path)
+    state = StateManager(config.db_file)
     try:
         state.init_db()
         report = run_import_core(config, state, Path(path), dry_run=dry_run)

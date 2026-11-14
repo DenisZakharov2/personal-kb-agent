@@ -166,7 +166,7 @@ def process_status(
 ) -> None:
     """Показать статус базы данных."""
     config = load_config()
-    state = StateManager(config.db_path)
+    state = StateManager(config.db_file)
     try:
         state.init_db()
         stats = state.stats()
@@ -192,7 +192,7 @@ def process_reindex(
 ) -> None:
     """Перестроить notes_fts из существующих файлов vault (чтение frontmatter)."""
     config = load_config()
-    state = StateManager(config.db_path)
+    state = StateManager(config.db_file)
     vault = VaultManager(config)
     try:
         state.init_db()
@@ -267,7 +267,7 @@ def process_doctor(
 ) -> None:
     """Проверка целостности: орфаны, битые FTS-ссылки, зависшие processing, источники."""
     config = load_config()
-    state = StateManager(config.db_path)
+    state = StateManager(config.db_file)
     vault = VaultManager(config)
     try:
         state.init_db()
@@ -359,7 +359,7 @@ def process_doctor(
 
         # 5. Расхождение sources (SQLite vs sources.yaml).
         yaml_source_ids: set[str] = set()
-        sources_path = config.sources_path
+        sources_path = config.sources_file
         if sources_path.exists():
             try:
                 data = yaml.safe_load(sources_path.read_text(encoding="utf-8")) or {}
@@ -389,7 +389,7 @@ def process_doctor(
             )
 
         # 6. Состояние источников (health): список всех источников из реестра.
-        registry = SourceRegistry(sources_path=config.sources_path, state=state)
+        registry = SourceRegistry(sources_path=config.sources_file, state=state)
         all_sources = registry.list(enabled_only=False)
         sources_health = [
             {
@@ -465,7 +465,7 @@ def process_retry(
 ) -> None:
     """Повторная обработка конкретного элемента очереди (сброс в state='new')."""
     config = load_config()
-    state = StateManager(config.db_path)
+    state = StateManager(config.db_file)
     try:
         state.init_db()
         conn = state.connect()
@@ -534,7 +534,7 @@ def process_skipped(
     после чего конвейер подхватит его при следующем запуске.
     """
     config = load_config()
-    state_mgr = StateManager(config.db_path)
+    state_mgr = StateManager(config.db_file)
     try:
         state_mgr.init_db()
         conn = state_mgr.connect()
@@ -606,7 +606,7 @@ def process_reconcile(
     - элементы raw_queue в состоянии processing с истёкшим lease
     """
     config = load_config()
-    state = StateManager(config.db_path)
+    state = StateManager(config.db_file)
     vault = VaultManager(config)
     try:
         state.init_db()
@@ -784,7 +784,7 @@ def process_backup(
 ) -> None:
     """Экспорт SQLite + vault в zip-архив."""
     config = load_config()
-    state = StateManager(config.db_path)
+    state = StateManager(config.db_file)
     vault = VaultManager(config)
     try:
         state.init_db()
@@ -801,8 +801,8 @@ def process_backup(
         zip_path.parent.mkdir(parents=True, exist_ok=True)
 
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as archive:
-            if config.db_path.exists():
-                archive.write(config.db_path, arcname="state.db")
+            if config.db_file.exists():
+                archive.write(config.db_file, arcname="state.db")
             for path in sorted(vault.list_notes()):
                 arcname = str(Path("vault") / path.relative_to(vault.vault_path))
                 archive.write(path, arcname=arcname)

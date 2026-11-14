@@ -69,7 +69,7 @@ class InsightsEngine:
 
     def _profile_topics(self) -> list[str]:
         """Темы из профиля пользователя (секция user)."""
-        path = Path(self.config.profile_path)
+        path = Path(self.config.profile_file)
         if not path.exists():
             return []
         try:

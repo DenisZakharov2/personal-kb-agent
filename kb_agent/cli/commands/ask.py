@@ -35,7 +35,7 @@ def ask_command(
 ) -> None:
     """Задать вопрос базе знаний и получить ответ со ссылками на заметки."""
     config = load_config()
-    state = StateManager(config.db_path)
+    state = StateManager(config.db_file)
     try:
         state.init_db()
         llm = LLMClient(config)
@@ -79,7 +79,7 @@ def search_command(
 ) -> None:
     """Поиск заметок по запросу (без LLM-синтеза, только список)."""
     config = load_config()
-    state = StateManager(config.db_path)
+    state = StateManager(config.db_file)
     try:
         state.init_db()
         results = [
@@ -130,7 +130,7 @@ def insights_command(
 ) -> None:
     """Показать инсайты: повторяющиеся темы, связи между заметками."""
     config = load_config()
-    state = StateManager(config.db_path)
+    state = StateManager(config.db_file)
     try:
         state.init_db()
         engine = InsightsEngine(config, state)
@@ -182,7 +182,7 @@ def update_check_command(
 ) -> None:
     """Поиск дублей и предложение слияния заметок."""
     config = load_config()
-    state = StateManager(config.db_path)
+    state = StateManager(config.db_file)
     try:
         state.init_db()
         updater = KnowledgeUpdater(config, state)

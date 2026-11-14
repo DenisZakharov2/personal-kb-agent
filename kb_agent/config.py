@@ -23,20 +23,24 @@ from kb_agent.utils.logger import configure_file_logging
 def _get_project_root() -> Path | None:
     """Возвращает корень проекта если запущено из исходников (editable install), иначе None.
 
-    Сначала проверяет текущую рабочую директорию (для CI pytest),
-    затем поднимается вверх от расположения этого файла.
-    В установленном wheel __file__ указывает в site-packages, где pyproject.toml нет.
+    Порядок поиска:
+    1. Родительские директории текущего файла (``__file__``) — надёжный признак
+       репозитория: не зависит от того, из какой папки запущен CLI.
+    2. Текущая рабочая директория — только если она выглядит как корень этого
+       проекта (есть ``pyproject.toml`` И каталог ``kb_agent``). Иначе случайный
+       чужой ``pyproject.toml`` в CWD увёл бы пользовательские данные не туда.
+    3. В установленном wheel ``pyproject.toml`` не найден — возвращаем None.
     """
-    # 1. Проверяем CWD (для CI, где pytest запускается из корня репозитория)
-    cwd = Path.cwd()
-    if (cwd / "pyproject.toml").exists():
-        return cwd
-
-    # 2. Проверяем родительские директории __file__ (режим разработки)
+    # 1. Поднимаемся вверх от расположения этого файла (режим разработки).
     here = Path(__file__).resolve()
-    for parent in [here.parent, here.parent.parent, here.parent.parent.parent]:
-        if (parent / "pyproject.toml").exists():
+    for parent in (here.parent, here.parent.parent, here.parent.parent.parent):
+        if (parent / "pyproject.toml").exists() and (parent / "kb_agent").is_dir():
             return parent
+
+    # 2. Fallback: CWD, но только если это действительно корень нашего проекта.
+    cwd = Path.cwd()
+    if (cwd / "pyproject.toml").exists() and (cwd / "kb_agent").is_dir():
+        return cwd
 
     # 3. В wheel pyproject.toml не найден — возвращаем None
     return None
@@ -250,6 +254,44 @@ class AppConfig(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
+    # ---- Готовые пути (всегда определены после валидации) ----
+    #
+    # Валидатор _resolve_paths вычисляет все производные пути, поэтому для
+    # потребителей удобны свойства без Optional — иначе каждый вызов
+    # StateManager(...) упирался бы в «Path | None».
+
+    @staticmethod
+    def _require_path(value: Path | None, name: str) -> Path:
+        """Возвращает путь или поднимает понятную ошибку конфигурации."""
+        if value is None:
+            raise ValueError(f"Путь '{name}' не определён в конфигурации")
+        return value
+
+    @property
+    def db_file(self) -> Path:
+        """Путь к файлу БД состояния (всегда определён)."""
+        return self._require_path(self.db_path, "db_path")
+
+    @property
+    def profile_file(self) -> Path:
+        """Путь к файлу профиля пользователя (всегда определён)."""
+        return self._require_path(self.profile_path, "profile_path")
+
+    @property
+    def sources_file(self) -> Path:
+        """Путь к файлу реестра источников (всегда определён)."""
+        return self._require_path(self.sources_path, "sources_path")
+
+    @property
+    def log_file(self) -> Path:
+        """Путь к файлу журнала (всегда определён)."""
+        return self._require_path(self.log_path, "log_path")
+
+    @property
+    def vault_dir(self) -> Path:
+        """Каталог Obsidian-vault (всегда определён)."""
+        return self._require_path(self.vault_path, "vault_path")
+
 
 def load_config(env_file: str | None = None) -> AppConfig:
     """Загружает конфигурацию.
@@ -306,10 +348,15 @@ def load_config(env_file: str | None = None) -> AppConfig:
 
     kwargs: dict[str, object] = {}
     for env_name, field_name in env_mapping.items():
-        if env_name in os.environ:
-            kwargs[field_name] = os.environ[env_name]
-        elif env_name in env_vars:
-            kwargs[field_name] = env_vars[env_name]
+        # Приоритет: переменная окружения > .env. Пустое значение (или одни
+        # пробелы) считается «не задано» — иначе пустой секрет в CI подменял бы
+        # значение по умолчанию пустой строкой (например, base_url без хоста).
+        value = os.environ.get(env_name)
+        if value is None:
+            value = env_vars.get(env_name)
+        if value is None or not value.strip():
+            continue
+        kwargs[field_name] = value
 
     config = AppConfig(**kwargs)  # type: ignore[arg-type]
     # Файловый журнал (rotating) по пути config.log_path, если задан.

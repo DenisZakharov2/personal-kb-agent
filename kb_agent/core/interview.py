@@ -17,7 +17,7 @@ from kb_agent.config import AppConfig
 class InterviewManager:
     def __init__(self, config: AppConfig) -> None:
         self.config = config
-        self.profile_path = config.profile_path
+        self.profile_path = config.profile_file
 
     _QUESTIONS: ClassVar[list[tuple[str, str]]] = [
         (
@@ -73,7 +73,7 @@ class InterviewManager:
                 s.strip() for s in profile["sources"].replace(";", ",").split(",") if s.strip()
             ]
         profile["system"] = profile.get("system", "Obsidian")
-        profile["vault_path"] = str(self.config.vault_path)
+        profile["vault_path"] = str(self.config.vault_dir)
         return profile
 
     def save_profile(self, profile: dict) -> Path:

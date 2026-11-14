@@ -51,7 +51,7 @@ def self_improve(
     if ctx.invoked_subcommand is not None:
         return
     config = load_config()
-    state = StateManager(config.db_path)
+    state = StateManager(config.db_file)
     try:
         state.init_db()
         engine = SelfImprovementEngine(state)
@@ -132,7 +132,7 @@ def self_improve_list(
         raise typer.Exit(code=1)
 
     config = load_config()
-    state = StateManager(config.db_path)
+    state = StateManager(config.db_file)
     try:
         state.init_db()
         engine = SelfImprovementEngine(state)
@@ -212,7 +212,7 @@ def self_improve_propose_prompt(
         raise typer.Exit(code=1)
 
     config = load_config()
-    state = StateManager(config.db_path)
+    state = StateManager(config.db_file)
     try:
         state.init_db()
         engine = SelfImprovementEngine(state)
@@ -290,7 +290,7 @@ def self_improve_apply_prompt(
         raise typer.Exit(code=1)
 
     config = load_config()
-    state = StateManager(config.db_path)
+    state = StateManager(config.db_file)
     try:
         state.init_db()
         engine = SelfImprovementEngine(state)
@@ -359,7 +359,7 @@ def self_improve_reject(
 ) -> None:
     """Отклонить предложение по улучшению."""
     config = load_config()
-    state = StateManager(config.db_path)
+    state = StateManager(config.db_file)
     try:
         state.init_db()
         engine = SelfImprovementEngine(state)
@@ -416,7 +416,7 @@ def self_improve_propose_config(
 ) -> None:
     """Предложить изменение конфигурационного значения (сохраняется в SQLite)."""
     config = load_config()
-    state = StateManager(config.db_path)
+    state = StateManager(config.db_file)
     try:
         state.init_db()
         engine = SelfImprovementEngine(state)
@@ -466,7 +466,7 @@ def self_improve_apply_config(
 ) -> None:
     """Применить предложение по изменению конфигурации (после проверки тестовым набором)."""
     config = load_config()
-    state = StateManager(config.db_path)
+    state = StateManager(config.db_file)
     try:
         state.init_db()
         engine = SelfImprovementEngine(state)
@@ -535,7 +535,7 @@ def self_improve_rollback(
 ) -> None:
     """Откатить промпт к указанной версии (требует подтверждения)."""
     config = load_config()
-    state = StateManager(config.db_path)
+    state = StateManager(config.db_file)
     try:
         state.init_db()
         engine = SelfImprovementEngine(state)

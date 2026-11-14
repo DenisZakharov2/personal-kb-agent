@@ -311,10 +311,15 @@ class TestPipelineExitCode:
 
 
 class TestMarkFailedBackoff:
-    """P1-06: mark_failed вычисляет next_retry_at с экспоненциальным backoff."""
+    """P1-06: mark_failed вычисляет next_retry_at с экспоненциальным backoff.
+
+    Счётчик ``attempts`` ведёт ``claim_next`` (единственный инкремент), поэтому
+    ``mark_failed`` его не меняет, а задержка считается как ``2^(attempts-1)``
+    минут: 1, 2, 4, 8, … минут после 1-й, 2-й, 3-й, 4-й неудачи.
+    """
 
     def test_mark_failed_sets_next_retry_at_from_attempts(self, config):
-        """При первом失败 attempts=0 → задержка 1 минута (2^0)."""
+        """После первой попытки (attempts=1) задержка 1 минута (2^0)."""
         state = StateManager(config.db_path)
         state.init_db()
         try:
@@ -323,7 +328,7 @@ class TestMarkFailedBackoff:
                 """
                 INSERT INTO raw_queue
                 (source_id, external_id, canonical_url, title, raw_text, raw_hash, state, attempts)
-                VALUES (?, ?, ?, ?, ?, ?, 'new', 0)
+                VALUES (?, ?, ?, ?, ?, ?, 'processing', 1)
                 """,
                 ("src", "ext1", "https://example.com/1", "T", "text", "hash1"),
             )
@@ -340,6 +345,7 @@ class TestMarkFailedBackoff:
             ).fetchone()
             assert row["state"] == "failed"
             assert row["last_error"] == "тестовая ошибка"
+            # attempts ведёт claim_next — mark_failed его не увеличивает.
             assert row["attempts"] == 1
             assert row["next_retry_at"] is not None
             # Задержка должна быть примерно 1 минута (2^0).
@@ -350,8 +356,40 @@ class TestMarkFailedBackoff:
         finally:
             state.close()
 
+    def test_mark_failed_does_not_increment_attempts(self, config):
+        """mark_failed не увеличивает attempts (иначе backoff рос бы вдвое быстрее)."""
+        state = StateManager(config.db_path)
+        state.init_db()
+        try:
+            conn = state.connect()
+            conn.execute(
+                """
+                INSERT INTO raw_queue
+                (source_id, external_id, canonical_url, title, raw_text, raw_hash, state, attempts)
+                VALUES (?, ?, ?, ?, ?, ?, 'new', 0)
+                """,
+                ("src", "ext-attempts", "https://example.com/attempts", "T", "text", "hash-a"),
+            )
+            conn.commit()
+
+            claimed = state.claim_next()
+            assert claimed is not None
+            row = conn.execute(
+                "SELECT attempts FROM raw_queue WHERE id = ?", (claimed["id"],)
+            ).fetchone()
+            # claim_next — единственное место, где attempts увеличивается.
+            assert row["attempts"] == 1
+
+            state.mark_failed(claimed["id"], "ошибка")
+            row = conn.execute(
+                "SELECT attempts FROM raw_queue WHERE id = ?", (claimed["id"],)
+            ).fetchone()
+            assert row["attempts"] == 1
+        finally:
+            state.close()
+
     def test_mark_failed_exponential_backoff(self, config):
-        """При attempts=3 задержка 8 минут (2^3)."""
+        """При attempts=3 (три неудачи) задержка 4 минуты (2^2)."""
         state = StateManager(config.db_path)
         state.init_db()
         try:
@@ -374,12 +412,12 @@ class TestMarkFailedBackoff:
             row = conn.execute(
                 "SELECT next_retry_at, attempts FROM raw_queue WHERE id = ?", (qid,)
             ).fetchone()
-            assert row["attempts"] == 4
+            assert row["attempts"] == 3
             retry_at = datetime.fromisoformat(row["next_retry_at"])
             now = datetime.now(timezone.utc)
             delta = (retry_at - now).total_seconds()
-            # 2^3 = 8 минут = 480 сек, допускаем погрешность на выполнение кода.
-            assert 470 < delta < 490, f"ожидалось ~480 сек, получено {delta}"
+            # 2^2 = 4 минуты = 240 сек, допускаем погрешность на выполнение кода.
+            assert 230 < delta < 250, f"ожидалось ~240 сек, получено {delta}"
         finally:
             state.close()
 
@@ -409,7 +447,7 @@ class TestMarkFailedBackoff:
                 "SELECT next_retry_at, attempts FROM raw_queue WHERE id = ?", (qid,)
             ).fetchone()
             assert row["next_retry_at"] == explicit
-            assert row["attempts"] == 1
+            assert row["attempts"] == 0
         finally:
             state.close()
 

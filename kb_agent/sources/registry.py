@@ -83,14 +83,14 @@ class SourceRegistry:
     ) -> None:
         if sources_path is None:
             config = load_config()
-            sources_path = config.sources_path
+            sources_path = config.sources_file
         self.sources_path = Path(sources_path)
         self.state = state
         self._sources: dict[str, SourceConfig] = {}
         self._loaded = False
         self._use_sqlite = state is not None
 
-    # ---- 내부: преобразование между SourceConfig и строкой SQLite ----
+    # ---- Внутреннее: преобразование между SourceConfig и строкой SQLite ----
 
     def _row_to_config(self, row: dict) -> SourceConfig:
         return SourceConfig(
@@ -232,7 +232,7 @@ class SourceRegistry:
         self.load()
         return self._sources.get(source_id)
 
-    # ---- Запись (할я SQLite канонически) ----
+    # ---- Запись (канонично — SQLite) ----
 
     def add(self, source_config: SourceConfig) -> bool:
         """Добавляет источник. Возвращает False, если уже существует или некорректен."""
@@ -387,7 +387,7 @@ def ensure_sources_file(
     if config is None or sources_path is None:
         loaded = load_config()
         config = config or loaded
-        sources_path = sources_path or config.sources_path
+        sources_path = sources_path or config.sources_file
 
     sources_path = Path(sources_path)
     if sources_path.exists():

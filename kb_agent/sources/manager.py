@@ -42,7 +42,7 @@ class SourceManager:
         # с state). YAML (sources-page) — только экспорт/импорт, не источник
         # чтения для сборщика. На чистой установке реестр пуст; добавить
         # источник можно через `kb-agent sources add` или pending/MCP.
-        registry_path = config.sources_path
+        registry_path = config.sources_file
         self.registry = SourceRegistry(sources_path=registry_path, state=state)
 
     def collect_all(self, limit: int | None = None) -> SourceCollectionResult:
@@ -121,7 +121,7 @@ def run_collection(
     if config is None:
         config = load_config()
     if state is None:
-        state = StateManager(config.db_path)
+        state = StateManager(config.db_file)
         state.init_db()
         created_here = True
     else:

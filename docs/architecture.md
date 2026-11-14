@@ -353,16 +353,25 @@ flowchart LR
 
 ## Безопасность
 
-- **Режим локальной обработки** (`KB_LOCAL_PROCESSING_MODE=true`) — данные не уходят наружу, работает только с Ollama.
-- **Редакция** (`KB_REDACT_FIELDS`, `KB_REDACT_SOURCES`) — исключение чувствительных полей/источников из отправки LLM.
+- **Режим локальной обработки** (`KB_LOCAL_PROCESSING_MODE=true`) — запросы к внешнему LLM
+  блокируются; разрешены только `ollama`, `local` и `custom` с loopback-адресом
+  (реализация — `kb_agent/processing/privacy.py` + guard в `LLMClient.complete`).
+- **Редакция** (`KB_REDACT_FIELDS`, `KB_REDACT_SOURCES`) — чувствительные значения вырезаются
+  из текста запроса; контент исключённых источников не суммаризируется и не попадает в контекст
+  LLM-ответа. Применяется только к внешним провайдерам.
 - **Приватные заметки/источники** (`is_private=1`) — не возвращаются через MCP.
 - **Pending-подтверждение** — write-операции требуют `kb-agent confirm <id>` человеком.
 - **Allowlist доменов** — добавление источников только с доверенных хостов (t.me, youtube.com, youtu.be).
+- **Состояние в CI** — артефакт GitHub Actions с vault/state.db шифруется ключом
+  `KB_STATE_ENCRYPTION_KEY`; открытые данные не публикуются.
 
 ## Тестирование и качество
 
-- **297 тестов** (pytest) — unit, integration, security
+- **343 теста** (pytest) — unit, integration, security
 - **Ruff** — линтинг и форматирование
-- **mypy** — статическая типизация (non-blocking для legacy кода)
-- **pip-audit** — аудит зависимостей
+- **mypy** — статическая типизация; в CI проверка блокирующая через baseline
+  (`ci/mypy-baseline.txt`, скрипт `scripts/check_mypy_baseline.py`): рост числа ошибок ломает сборку
+- **pip-audit** — аудит зависимостей (блокирующая проверка в CI)
+- **Проверка синхронности промптов** — `scripts/check_prompts_sync.py`
+  (`config/prompts` ↔ `kb_agent/resources/prompts`)
 - **GitHub Actions CI** — запуск на Python 3.10, 3.11, 3.12

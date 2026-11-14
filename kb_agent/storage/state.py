@@ -515,9 +515,14 @@ class StateManager:
         return dict(row) if row else None
 
     def mark_processing(self, queue_id: int) -> None:
+        """Переводит элемент очереди в состояние 'processing'.
+
+        Счётчик ``attempts`` здесь не увеличивается: его ведёт ``claim_next``
+        (единственное место инкремента), чтобы одна попытка не учитывалась дважды.
+        """
         conn = self.connect()
         conn.execute(
-            "UPDATE raw_queue SET state = 'processing', attempts = attempts + 1 WHERE id = ?",
+            "UPDATE raw_queue SET state = 'processing' WHERE id = ?",
             (queue_id,),
         )
         conn.commit()
@@ -547,9 +552,14 @@ class StateManager:
 
         Если ``next_retry_at`` не задан и ``backoff=True``, вычисляется время
         следующей попытки с экспоненциальной задержкой на основе текущего
-        ``attempts``: ``min(2^attempts минут, 24 часа)``. Это позволяет
-        ``claim_next`` автоматически подхватить элемент после истечения задержки
-        (P1-06: failed-элементы не застревают навсегда).
+        ``attempts``: ``min(2^(attempts-1) минут, 24 часа)`` — то есть
+        1, 2, 4, 8, … минут после первой, второй, третьей неудачи.
+        Это позволяет ``claim_next`` автоматически подхватить элемент после
+        истечения задержки (P1-06: failed-элементы не застревают навсегда).
+
+        Счётчик ``attempts`` здесь НЕ увеличивается: его ведёт ``claim_next``
+        (единственное место инкремента). Раньше он увеличивался в обоих местах,
+        из-за чего backoff рос вдвое быстрее задуманного.
         """
         conn = self.connect()
         if next_retry_at is None and backoff:
@@ -558,7 +568,7 @@ class StateManager:
             ).fetchone()
             current_attempts = int(row["attempts"] or 0) if row else 0
             # Экспоненциальный backoff: 1, 2, 4, 8, ... минут, максимум 24 часа.
-            delay_minutes = min(2**current_attempts, 60 * 24)
+            delay_minutes = min(2 ** max(0, current_attempts - 1), 60 * 24)
             next_retry_at = (
                 datetime.now(timezone.utc) + timedelta(minutes=delay_minutes)
             ).isoformat()
@@ -566,7 +576,7 @@ class StateManager:
             """
             UPDATE raw_queue
             SET state = 'failed', last_error = ?, next_retry_at = ?,
-                lease_expires_at = NULL, attempts = attempts + 1
+                lease_expires_at = NULL
             WHERE id = ?
             """,
             (error, next_retry_at, queue_id),
@@ -577,11 +587,14 @@ class StateManager:
         self,
         lease_seconds: int = 300,
     ) -> dict | None:
-        """Атоматически захватывает задание для обработки.
+        """Автоматически захватывает задание для обработки.
 
         Выбирает элемент в состоянии 'new', либо 'processing'/'failed'
         с истекшим lease (lease_expires_at < now) либо failed с
         next_retry_at <= now. Возвращает запись или None.
+
+        Счётчик ``attempts`` увеличивается именно здесь — это единственное
+        место инкремента (иначе backoff рос бы вдвое быстрее задуманного).
 
         Использует BEGIN IMMEDIATE для защиты от параллельных воркеров.
         """
@@ -1110,39 +1123,35 @@ class StateManager:
             conn.rollback()
             raise
 
-    def search(
-        self,
-        query: str,
-        limit: int = 10,
-        *,
-        source_id: str | None = None,
-        topic: str | None = None,
-        tags: list[str] | None = None,
-        date_from: str | None = None,
-        date_to: str | None = None,
-        include_archived: bool = False,
-        include_private: bool = True,
-        offset: int = 0,
-    ) -> list[dict]:
-        conn = self.connect()
-        # Ограничиваем размер выдачи: защита от выкачивания всей базы в контекст LLM.
-        try:
-            limit = max(1, min(int(limit), 20))
-        except (TypeError, ValueError):
-            limit = 10
+    @staticmethod
+    def _build_fts_query(query: str) -> str | None:
+        """Экранирует запрос для FTS5: оставляет только слова, соединяет через OR.
 
-        # Экранируем запрос для FTS5: оставляем только слова, соединяем через OR
-        # (чтобы найти заметки по любому из слов). Операторы FTS5 (", *, -, NEAR)
-        # и прочий синтаксис в запрос не попадают.
+        Операторы FTS5 (", *, -, NEAR") и прочий синтаксис в запрос не попадают.
+        """
         words = _WORD_RE.findall(query or "")
         if not words:
-            return []
-        fts_query = " OR ".join(f'"{word}"' for word in words)
+            return None
+        return " OR ".join(f'"{word}"' for word in words)
 
-        # Дополнительные фильтры накладываются на каноническую таблицу notes
-        # (проекция rebuildable, метаданные provenance хранятся там).
+    @staticmethod
+    def _build_filters(
+        *,
+        source_id: str | None,
+        topic: str | None,
+        tags: list[str] | None,
+        date_from: str | None,
+        date_to: str | None,
+        include_archived: bool,
+        include_private: bool,
+    ) -> tuple[list[str], list[object]]:
+        """Строит дополнительные условия выборки и их параметры.
+
+        Условия накладываются на каноническую таблицу ``notes`` (проекция
+        ``notes_fts`` rebuildable, метаданные provenance хранятся там).
+        """
         conditions: list[str] = []
-        params: list[object] = [fts_query]
+        params: list[object] = []
         if source_id is not None:
             conditions.append("n.source_id = ?")
             params.append(source_id)
@@ -1167,6 +1176,43 @@ class StateManager:
             conditions.append("(n.is_archived = 0 OR n.is_archived IS NULL)")
         if not include_private:
             conditions.append("(n.is_private = 0 OR n.is_private IS NULL)")
+        return conditions, params
+
+    def search(
+        self,
+        query: str,
+        limit: int = 10,
+        *,
+        source_id: str | None = None,
+        topic: str | None = None,
+        tags: list[str] | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        include_archived: bool = False,
+        include_private: bool = True,
+        offset: int = 0,
+    ) -> list[dict]:
+        conn = self.connect()
+        # Ограничиваем размер выдачи: защита от выкачивания всей базы в контекст LLM.
+        try:
+            limit = max(1, min(int(limit), 20))
+        except (TypeError, ValueError):
+            limit = 10
+
+        fts_query = self._build_fts_query(query)
+        if fts_query is None:
+            return []
+
+        conditions, filter_params = self._build_filters(
+            source_id=source_id,
+            topic=topic,
+            tags=tags,
+            date_from=date_from,
+            date_to=date_to,
+            include_archived=include_archived,
+            include_private=include_private,
+        )
+        params: list[object] = [fts_query, *filter_params]
 
         # Строим WHERE-клаузу безопасно: базовое условие MATCH + дополнительные фильтры
         base_where = "notes_fts MATCH ?"
@@ -1194,6 +1240,60 @@ class StateManager:
             logger.warning("FTS-запрос отклонён (%s): %s", fts_query, exc)
             return []
         return [dict(row) for row in rows]
+
+    def count(
+        self,
+        query: str,
+        *,
+        source_id: str | None = None,
+        topic: str | None = None,
+        tags: list[str] | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        include_archived: bool = False,
+        include_private: bool = True,
+    ) -> int:
+        """Возвращает общее число заметок, подходящих под запрос и фильтры.
+
+        Используется, чтобы отдавать честное значение ``total`` в MCP-ответе
+        (раньше оно вычислялось приблизительно и ломало пагинацию клиента).
+        """
+        conn = self.connect()
+        fts_query = self._build_fts_query(query)
+        if fts_query is None:
+            return 0
+
+        conditions, filter_params = self._build_filters(
+            source_id=source_id,
+            topic=topic,
+            tags=tags,
+            date_from=date_from,
+            date_to=date_to,
+            include_archived=include_archived,
+            include_private=include_private,
+        )
+        params: list[object] = [fts_query, *filter_params]
+
+        base_where = "notes_fts MATCH ?"
+        if conditions:
+            where_clause = "WHERE " + base_where + " AND " + " AND ".join(conditions)
+        else:
+            where_clause = "WHERE " + base_where
+
+        try:
+            row = conn.execute(
+                f"""
+                SELECT COUNT(*) AS total
+                FROM notes_fts f
+                LEFT JOIN notes n ON n.note_id = f.note_id
+                {where_clause}
+                """,
+                params,
+            ).fetchone()
+        except sqlite3.OperationalError as exc:
+            logger.warning("FTS-запрос отклонён (%s): %s", fts_query, exc)
+            return 0
+        return int(row["total"]) if row else 0
 
     def get_note(self, note_id: str) -> dict | None:
         """Возвращает заметку по ID.

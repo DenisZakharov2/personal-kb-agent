@@ -9,6 +9,16 @@ concurrency:
   group: kb-collect
   cancel-in-progress: false
 
+# Приватность: состояние базы знаний (vault + state.db) НИКОГДА не публикуется
+# открытым текстом. Архив шифруется ключом из секрета KB_STATE_ENCRYPTION_KEY.
+# Если секрет не задан — состояние просто не сохраняется (безопасный дефолт).
+#
+# Дополнительная рекомендация: сделайте репозиторий приватным — тогда даже
+# метаданные запусков и логи не будут видны публично.
+
+permissions:
+  contents: read
+
 jobs:
   collect:
     runs-on: ubuntu-latest
@@ -29,7 +39,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e .
 
-      - name: Restore previous state (state.db + vault)
+      - name: Restore previous state (encrypted artifact)
         uses: actions/download-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         if: always()
         with:
@@ -37,56 +47,93 @@ jobs:
           path: ${{ runner.temp }}/kb-restore
         continue-on-error: true
 
-      - name: Configure environment
-        run: |
-          # Все данные конвейера складываем во временную рабочую директорию раннера,
-          # чтобы после прогона можно было сохранить артефакты (vault + state.db).
-          echo "KB_DATA_DIR=${{ runner.temp }}/kb-data" >> $GITHUB_ENV
-          echo "KB_VAULT_PATH=${{ runner.temp }}/kb-vault" >> $GITHUB_ENV
-          echo "KB_DB_PATH=${{ runner.temp }}/kb-data/state.db" >> $GITHUB_ENV
-          echo "KB_LOG_PATH=${{ runner.temp }}/kb-data/kb_agent.log" >> $GITHUB_ENV
-          # Секреты из GitHub Secrets пробрасываем в окружение приложения через $GITHUB_ENV
-          # (load_config читает переменные окружения, поэтому .env-файл не нужен).
-          # НЕ переопределяем KB_VAULT_PATH из секрета на эфемерном раннере — используем локальный путь.
-          echo "KB_TELEGRAM_CHANNELS=${{ secrets.KB_TELEGRAM_CHANNELS }}" >> $GITHUB_ENV
-          echo "KB_YOUTUBE_CHANNELS=${{ secrets.KB_YOUTUBE_CHANNELS }}" >> $GITHUB_ENV
-          echo "KB_OPENAI_API_KEY=${{ secrets.KB_OPENAI_API_KEY }}" >> $GITHUB_ENV
-          echo "KB_OPENAI_BASE_URL=${{ secrets.KB_OPENAI_BASE_URL }}" >> $GITHUB_ENV
-          echo "KB_OPENAI_MODEL=${{ secrets.KB_OPENAI_MODEL }}" >> $GITHUB_ENV
-          echo "KB_LLM_PROVIDER=${{ secrets.KB_LLM_PROVIDER }}" >> $GITHUB_ENV
-
-      - name: Restore state.db and vault from previous run
+      - name: Decrypt and restore state.db + vault
         if: always()
+        env:
+          KB_STATE_ENCRYPTION_KEY: ${{ secrets.KB_STATE_ENCRYPTION_KEY }}
+          KB_DATA_DIR: ${{ runner.temp }}/kb-data
+          KB_VAULT_PATH: ${{ runner.temp }}/kb-vault
+          KB_DB_PATH: ${{ runner.temp }}/kb-data/state.db
         run: |
-          mkdir -p "${{ env.KB_VAULT_PATH }}" "${{ runner.temp }}/kb-data"
-          # Восстанавливаем state.db, если есть (артефакт содержит kb-data/state.db)
-          if [ -f "${{ runner.temp }}/kb-restore/kb-data/state.db" ]; then
-            cp "${{ runner.temp }}/kb-restore/kb-data/state.db" "${{ env.KB_DB_PATH }}"
-            echo "Restored state.db from previous run"
+          set -euo pipefail
+          if [ -z "${KB_STATE_ENCRYPTION_KEY}" ]; then
+            echo "::notice::Секрет KB_STATE_ENCRYPTION_KEY не задан — состояние не восстанавливается."
+            exit 0
           fi
-          # Восстанавливаем vault полностью (сохраняя структуру папок), если есть
-          if [ -d "${{ runner.temp }}/kb-restore/kb-vault" ] && [ "$(ls -A ${{ runner.temp }}/kb-restore/kb-vault)" ]; then
-            # Копируем содержимое vault рекурсивно, сохраняя структуру папок
-            cp -r "${{ runner.temp }}/kb-restore/kb-vault/." "${{ env.KB_VAULT_PATH }}/" 2>/dev/null || true
-            echo "Restored vault from previous run"
+          archive="${RUNNER_TEMP}/kb-restore/kb-state.enc"
+          if [ ! -f "${archive}" ]; then
+            echo "::notice::Артефакт с состоянием не найден — начинаем с чистой базы."
+            exit 0
+          fi
+          openssl enc -d -aes-256-cbc -pbkdf2 \
+            -in "${archive}" \
+            -out "${RUNNER_TEMP}/kb-state.tar.gz" \
+            -pass env:KB_STATE_ENCRYPTION_KEY
+          mkdir -p "${KB_DATA_DIR}" "${KB_VAULT_PATH}" "${RUNNER_TEMP}/kb-restore"
+          tar -xzf "${RUNNER_TEMP}/kb-state.tar.gz" -C "${RUNNER_TEMP}/kb-restore"
+          rm -f "${RUNNER_TEMP}/kb-state.tar.gz"
+          if [ -f "${RUNNER_TEMP}/kb-restore/kb-data/state.db" ]; then
+            cp "${RUNNER_TEMP}/kb-restore/kb-data/state.db" "${KB_DB_PATH}"
+            echo "Восстановлен state.db из предыдущего запуска"
+          fi
+          if [ -d "${RUNNER_TEMP}/kb-restore/kb-vault" ]; then
+            cp -r "${RUNNER_TEMP}/kb-restore/kb-vault/." "${KB_VAULT_PATH}/" 2>/dev/null || true
+            echo "Восстановлен vault из предыдущего запуска"
           fi
 
       - name: Run kb-agent pipeline (сбор + суммаризация + индексация)
+        env:
+          # Секреты передаются только в этом шаге: так они не становятся
+          # постоянными переменными окружения для всех последующих шагов.
+          KB_TELEGRAM_CHANNELS: ${{ secrets.KB_TELEGRAM_CHANNELS }}
+          KB_YOUTUBE_CHANNELS: ${{ secrets.KB_YOUTUBE_CHANNELS }}
+          KB_OPENAI_API_KEY: ${{ secrets.KB_OPENAI_API_KEY }}
+          KB_OPENAI_BASE_URL: ${{ secrets.KB_OPENAI_BASE_URL }}
+          KB_OPENAI_MODEL: ${{ secrets.KB_OPENAI_MODEL }}
+          KB_LLM_PROVIDER: ${{ secrets.KB_LLM_PROVIDER }}
+          # Несекретные пути: все данные конвейера складываем во временную
+          # рабочую директорию раннера.
+          KB_DATA_DIR: ${{ runner.temp }}/kb-data
+          KB_VAULT_PATH: ${{ runner.temp }}/kb-vault
+          KB_DB_PATH: ${{ runner.temp }}/kb-data/state.db
+          KB_LOG_PATH: ${{ runner.temp }}/kb-data/kb_agent.log
         run: kb-agent process run
 
       - name: Show status
+        env:
+          KB_DATA_DIR: ${{ runner.temp }}/kb-data
+          KB_VAULT_PATH: ${{ runner.temp }}/kb-vault
+          KB_DB_PATH: ${{ runner.temp }}/kb-data/state.db
+          KB_LOG_PATH: ${{ runner.temp }}/kb-data/kb_agent.log
         run: kb-agent process status
 
-      - name: Гарантировать существование путей для артефактов
+      - name: Собрать зашифрованный архив состояния
         if: always()
+        env:
+          KB_STATE_ENCRYPTION_KEY: ${{ secrets.KB_STATE_ENCRYPTION_KEY }}
+          KB_DATA_DIR: ${{ runner.temp }}/kb-data
+          KB_VAULT_PATH: ${{ runner.temp }}/kb-vault
         run: |
-          mkdir -p "${{ env.KB_VAULT_PATH }}" "${{ runner.temp }}/kb-data"
+          set -euo pipefail
+          if [ -z "${KB_STATE_ENCRYPTION_KEY}" ]; then
+            echo "::warning::Секрет KB_STATE_ENCRYPTION_KEY не задан — состояние НЕ сохраняется (данные не публикуются)."
+            exit 0
+          fi
+          cd "${RUNNER_TEMP}"
+          tar -czf kb-state.tar.gz kb-data kb-vault
+          openssl enc -aes-256-cbc -pbkdf2 -salt \
+            -in kb-state.tar.gz \
+            -out kb-state.enc \
+            -pass env:KB_STATE_ENCRYPTION_KEY
+          rm -f kb-state.tar.gz
+          echo "Архив состояния зашифрован"
 
-      - name: Сохранить артефакты (vault + state.db)
+      - name: Сохранить зашифрованное состояние (артефакт)
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         with:
           name: kb-state
-          path: |
-            ${{ env.KB_VAULT_PATH }}/
-            ${{ env.KB_DB_PATH }}
+          path: ${{ runner.temp }}/kb-state.enc
+          # Явный срок хранения: без него артефакт живёт 90 дней по умолчанию.
+          retention-days: 7
+          if-no-files-found: warn

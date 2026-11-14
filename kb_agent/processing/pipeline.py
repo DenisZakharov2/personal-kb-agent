@@ -32,13 +32,30 @@ from kb_agent.utils.logger import setup_logger
 
 logger = setup_logger("kb_agent.processing.pipeline")
 
+# Число подряд идущих ошибок обработки, после которого конвейер останавливается
+# («предохранитель»): при недоступном LLM очередь не должна «сгорать» целиком,
+# остальные элементы остаются в состоянии 'new' и будут обработаны позже.
+# Дополнительно учитывается circuit breaker самого LLMClient: при его срабатывании
+# текущий элемент возвращается в 'new' без увеличения backoff.
+FAILURE_THRESHOLD = 3
+
+
+def tg_stats_empty() -> dict[str, int]:
+    """Пустая статистика сбора Telegram."""
+    return {"new": 0, "spam": 0, "existing": 0}
+
+
+def yt_stats_empty() -> dict[str, int]:
+    """Пустая статистика сбора YouTube."""
+    return {"new": 0, "skipped": 0, "with_subtitles": 0}
+
 
 class Pipeline:
     """Один конвейер наполнения базы знаний."""
 
     def __init__(self, config: AppConfig) -> None:
         self.config = config
-        self.state = StateManager(config.db_path)
+        self.state = StateManager(config.db_file)
         self.llm = LLMClient(config)
         self.vault = VaultManager(config)
         self.catalog = CatalogGenerator(self.vault)
@@ -46,7 +63,7 @@ class Pipeline:
 
     def _load_profile(self) -> dict:
         """Загружает user_profile.yaml или возвращает пустой профиль."""
-        profile_path = Path(self.config.profile_path)
+        profile_path = Path(self.config.profile_file)
         if not profile_path.exists():
             return {}
         try:
@@ -63,6 +80,33 @@ class Pipeline:
         """
         logger.info("=== Запуск конвейера наполнения ===")
         self.state.init_db()
+
+        # Политика приватности (6.2): если включён локальный режим, а провайдер
+        # внешний — конвейер не запускается и ничего не отправляет наружу.
+        policy_error = self.llm.privacy_policy_error()
+        if policy_error:
+            logger.error("%s", policy_error)
+            return {
+                "collection": {
+                    "telegram": tg_stats_empty(),
+                    "youtube": yt_stats_empty(),
+                    "errors": [policy_error],
+                },
+                "health": {},
+                "summary": {"total_sources": 0, "healthy": 0, "failed": 0, "skipped": 0},
+                "processing": {
+                    "processed": 0,
+                    "created": 0,
+                    "updated": 0,
+                    "skipped": 0,
+                    "relevance_skipped": 0,
+                    "failed": 0,
+                },
+                "catalog": "",
+                "vault_digest": "",
+                "ok": False,
+            }
+
         # Создаём файл источников, если его нет (R-05).
         sources_path = ensure_sources_file(config=self.config)
         sources_text = sources_path.read_text(encoding="utf-8") if sources_path.exists() else ""
@@ -203,6 +247,8 @@ class Pipeline:
         processed_total = 0
         relevance_skipped = 0
         lease_seconds = 300  # 5 минут на обработку одного элемента
+        consecutive_failures = 0
+        breaker_open = False
 
         while True:
             item = self.state.claim_next(lease_seconds=lease_seconds)
@@ -227,10 +273,28 @@ class Pipeline:
                         queue_id,
                         relevance.reason,
                     )
+                    consecutive_failures = 0
                     continue
 
                 # Определяем тип источника
                 source_type = item["source_id"].split("_")[0]  # tg или yt
+
+                # Политика redaction (6.2): контент исключённых источников
+                # не отправляется внешнему LLM вообще — элемент пропускается.
+                if self.llm.is_source_excluded(item["source_id"]):
+                    self.state.mark_skipped(
+                        queue_id,
+                        f"источник исключён политикой redaction (KB_REDACT_SOURCES): "
+                        f"{item['source_id']}",
+                    )
+                    skipped += 1
+                    logger.info(
+                        "Пропуск (redaction) элемент %s: источник %s",
+                        queue_id,
+                        item["source_id"],
+                    )
+                    consecutive_failures = 0
+                    continue
 
                 # Идемпотентно: при повторном сборе того же источника
                 # обновляем существующую заметку (revision + 1), а не создаём новую.
@@ -267,8 +331,28 @@ class Pipeline:
                 )
 
                 if not summary.content.strip():
+                    # Circuit breaker LLM открыт: элемент возвращаем в 'new'
+                    # (данные не теряются, backoff не растёт), прогон останавливаем.
+                    if self.llm.circuit_open:
+                        self.state.release_lease(queue_id)
+                        breaker_open = True
+                        logger.error(
+                            "Circuit breaker LLM открыт — элемент %s возвращён в 'new', "
+                            "оставшиеся элементы очереди не обрабатываются.",
+                            queue_id,
+                        )
+                        break
                     self.state.mark_failed(queue_id, "пустой ответ от LLM")
                     failed += 1
+                    consecutive_failures += 1
+                    if consecutive_failures >= FAILURE_THRESHOLD:
+                        breaker_open = True
+                        logger.error(
+                            "Предохранитель сработал: %s подряд неудачных обработок — "
+                            "оставшиеся элементы очереди остаются в 'new'.",
+                            consecutive_failures,
+                        )
+                        break
                     continue
 
                 tags = summary.tags
@@ -351,11 +435,32 @@ class Pipeline:
                     updated += 1
                 else:
                     created += 1
+                consecutive_failures = 0
 
             except Exception as exc:
                 logger.exception("Ошибка при обработке элемента %s", queue_id)
+                # Circuit breaker LLM открыт — элемент возвращаем в 'new':
+                # очередь не должна «сгорать» целиком из-за недоступного LLM.
+                if self.llm.circuit_open:
+                    self.state.release_lease(queue_id)
+                    breaker_open = True
+                    logger.error(
+                        "Circuit breaker LLM открыт — элемент %s возвращён в 'new', "
+                        "оставшиеся элементы очереди не обрабатываются.",
+                        queue_id,
+                    )
+                    break
                 self.state.mark_failed(queue_id, str(exc))
                 failed += 1
+                consecutive_failures += 1
+                if consecutive_failures >= FAILURE_THRESHOLD:
+                    breaker_open = True
+                    logger.error(
+                        "Предохранитель сработал: %s подряд неудачных обработок — "
+                        "оставшиеся элементы очереди остаются в 'new'.",
+                        consecutive_failures,
+                    )
+                    break
 
         return {
             "processed": processed_total,
@@ -364,6 +469,7 @@ class Pipeline:
             "skipped": skipped,
             "relevance_skipped": relevance_skipped,
             "failed": failed,
+            "breaker_open": breaker_open,
         }
 
     def _write_vault_digest(

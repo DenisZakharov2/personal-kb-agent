@@ -14,13 +14,26 @@ from bs4 import BeautifulSoup
 
 from kb_agent.storage.state import StateManager
 from kb_agent.utils.logger import setup_logger
-from kb_agent.utils.spam import SPAM_KEYWORDS, is_spam
+from kb_agent.utils.spam import SPAM_KEYWORDS, detect_spam, is_spam
 
 logger = setup_logger("kb_agent.sources.telegram")
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36"
 }
+
+__all__ = [
+    "SPAM_KEYWORDS",
+    "collect_telegram_source",
+    "detect_spam",
+    "fetch_channel_posts",
+    "is_spam",
+]
+
+
+def _is_spam(text: str) -> bool:
+    """Проверка на спам (алиас на ``kb_agent.utils.spam.is_spam``)."""
+    return is_spam(text)
 
 
 def _extract_message_id(link: str) -> str:
@@ -34,11 +47,6 @@ def _clean_html(raw_html: str | None) -> str:
     if not raw_html:
         return ""
     return BeautifulSoup(raw_html, "html.parser").get_text(" ", strip=True)
-
-
-def _is_spam(text: str) -> bool:
-    """Проверка на спам (алиас на ``kb_agent.utils.spam.is_spam``)."""
-    return is_spam(text)
 
 
 def fetch_channel_posts(channel: str, limit: int) -> list[dict]:
@@ -91,7 +99,7 @@ def fetch_channel_posts(channel: str, limit: int) -> list[dict]:
                 "date": date,
                 "link": link,
                 "text": text,
-                "is_spam": _is_spam(text),
+                "spam_reason": detect_spam(text),
             }
         )
     return posts
@@ -146,9 +154,23 @@ def _collect_one_channel(
         external_id = f"{channel_name}_{p['message_id']}"
         raw_hash = hashlib.sha256((p["text"] + p["link"]).encode("utf-8")).hexdigest()
 
-        # Спам — не пишем в очередь, только считаем
-        if p["is_spam"]:
+        # Спам — не обрабатывается, но попадает в очередь как 'skipped' с причиной:
+        # ошибочно отфильтрованный пост можно вернуть через `kb-agent retry <id>`.
+        spam_reason = p.get("spam_reason")
+        if spam_reason:
             spam_for_channel += 1
+            queue_id = state.enqueue(
+                source_id=source_id,
+                external_id=external_id,
+                canonical_url=p["link"],
+                title=p["text"][:100],
+                raw_text=p["text"],
+                raw_hash=raw_hash,
+                published_at=p.get("date"),
+            )
+            if queue_id is not None:
+                state.mark_skipped(queue_id, spam_reason)
+                logger.info("  Пропущен как спам (%s): %s", external_id, spam_reason)
             continue
 
         # Проверка на déjà vu в raw_queue (по external_id)

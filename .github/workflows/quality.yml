@@ -10,6 +10,9 @@ concurrency:
   group: quality-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   quality:
     runs-on: ubuntu-latest
@@ -36,14 +39,17 @@ jobs:
       - name: Format (ruff format --check)
         run: ruff format --check kb_agent scripts tests
 
-      - name: Type check (mypy) — non-blocking for pre-existing issues
-        run: mypy kb_agent --no-error-summary || true
+      - name: Type check (mypy) — blocking baseline gate
+        run: python scripts/check_mypy_baseline.py
+
+      - name: Check prompts sync (config ↔ resources)
+        run: python scripts/check_prompts_sync.py
 
       - name: Tests (pytest)
         run: pytest tests/ -q
 
-      - name: Dependency audit (pip-audit)
-        run: pip-audit || true
+      - name: Dependency audit (pip-audit, blocking)
+        run: pip-audit --desc
 
       - name: Build wheel
         run: pip wheel . --no-deps --no-build-isolation

@@ -40,8 +40,14 @@ git checkout -b fix/ваш-фикс
 # Линтинг
 ruff check .
 
-# Типизация
-mypy kb_agent
+# Форматирование
+ruff format --check .
+
+# Типизация (CI проверяет baseline: падение при росте числа ошибок)
+python scripts/check_mypy_baseline.py
+
+# Синхронность промптов (config/prompts ↔ kb_agent/resources/prompts)
+python scripts/check_prompts_sync.py
 
 # Тесты
 pytest -v
@@ -50,6 +56,11 @@ pytest -v
 kb-agent --help
 kb-agent sources list
 ```
+
+> **Baseline mypy.** Число ошибок типов зафиксировано в `ci/mypy-baseline.txt`.
+> Проверка в CI блокирующая: она падает, если ошибок стало **больше**.
+> Если вы осознанно снизили долг — обновите baseline:
+> `python scripts/check_mypy_baseline.py --update`.
 
 ### 5. Коммит и пуш
 
@@ -105,7 +116,8 @@ personal-kb-agent/
 │   │   └── update.py            # KnowledgeUpdater
 │   ├── processing/          # Конвейер обработки
 │   │   ├── llm_client.py        # LLM клиент (OpenAI-совместимый, ретраи)
-│   │   └── pipeline.py          # Pipeline (сбор → relevance → LLM → vault)
+│   │   ├── pipeline.py          # Pipeline (сбор → relevance → LLM → vault)
+│   │   └── privacy.py           # Политика приватности (локальный режим, redaction)
 │   ├── sources/             # Источники данных
 │   │   ├── base.py              # BaseSource абстрактный класс
 │   │   ├── registry.py          # SourceRegistry (sources.yaml)
@@ -142,13 +154,19 @@ personal-kb-agent/
 │       ├── sources.example.yaml
 │       └── user_profile.example.yaml
 ├── scripts/                 # Утилиты
+│   ├── check_mypy_baseline.py   # Блокирующая проверка типов (baseline)
+│   ├── check_prompts_sync.py    # Проверка синхронности промптов
 │   ├── prepare_stage4_write.sh
 │   └── legacy/              # Legacy коллекторы (_queue.jsonl), не используются
-├── tests/                   # Тесты (297 тестов)
+├── ci/                      # Конфигурация CI
+│   └── mypy-baseline.txt    # Допустимое число ошибок mypy
+├── tests/                   # Тесты (343 теста)
 ├── docs/                    # Документация
 │   ├── architecture.md
 │   ├── workflow.md
-│   └── catalog.md
+│   ├── catalog.md
+│   ├── audits/              # Отчёты аудитов и планы исправлений
+│   └── history/             # Исторические документы проекта
 └── SKILL.md                 # MCP skill для ИИ-агентов
 ```
 

@@ -34,7 +34,7 @@ def pending_command(
 ) -> None:
     """Показать список pending-запросов write-операций."""
     config = load_config()
-    state = StateManager(config.db_path)
+    state = StateManager(config.db_file)
     try:
         state.init_db()
         pm = PendingManager(state)

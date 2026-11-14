@@ -42,7 +42,7 @@ def merge_command(
 ) -> None:
     """Объединить две заметки: дубль архивируется, ссылки переносятся на основную."""
     config = load_config()
-    state = StateManager(config.db_path)
+    state = StateManager(config.db_file)
     try:
         state.init_db()
 

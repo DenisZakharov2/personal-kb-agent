@@ -14,9 +14,8 @@ additionalProperties: false, перечисления, аннотации), чи
 from __future__ import annotations
 
 import asyncio
+import threading
 from typing import Any
-
-from kb_agent import __version__
 
 from mcp.server import Server
 from mcp.server.models import InitializationOptions
@@ -31,7 +30,8 @@ from mcp.types import (
 )
 from pydantic import BaseModel, Field, ValidationError
 
-from kb_agent.config import load_config
+from kb_agent import __version__
+from kb_agent.config import AppConfig, load_config
 from kb_agent.core.insights import InsightsEngine
 from kb_agent.core.search import SearchEngine
 from kb_agent.processing.llm_client import LLMClient
@@ -43,6 +43,82 @@ from kb_agent.utils.logger import setup_logger
 logger = setup_logger("kb_agent.mcp_server")
 
 app = Server("kb-agent")
+
+
+# ---------------------------------------------------------------------------
+# Кэш тяжёлых объектов сервера (устранение утечки соединений).
+#
+# Раньше на каждый вызов инструмента создавались StateManager и LLMClient,
+# а state.close() не вызывался: соединения SQLite и WAL-файлы накапливались
+# в течение сессии MCP-агента. Теперь объекты создаются лениво и переиспользуются,
+# а закрываются явно при завершении сервера.
+# ---------------------------------------------------------------------------
+
+
+class _Runtime:
+    """Ленивый кэш конфигурации, StateManager и LLMClient на уровне процесса."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._config: AppConfig | None = None
+        self._state: StateManager | None = None
+        self._llm: LLMClient | None = None
+        self._key: tuple | None = None
+
+    @staticmethod
+    def _config_key(config: AppConfig) -> tuple:
+        """Ключ, по которому определяется, что кэш устарел."""
+        return (
+            str(config.db_file),
+            config.llm_provider,
+            config.openai_base_url,
+            config.openai_model,
+            bool(config.local_processing_mode),
+            config.redact_fields,
+            config.redact_sources,
+        )
+
+    def get(self) -> tuple[AppConfig, StateManager, LLMClient]:
+        """Возвращает (config, state, llm), создавая их при первом обращении."""
+        config = load_config()
+        key = self._config_key(config)
+        with self._lock:
+            if self._key != key:
+                self._close_locked()
+                state = StateManager(config.db_file)
+                state.init_db()
+                self._config = config
+                self._state = state
+                self._llm = LLMClient(config)
+                self._key = key
+            cached_config = self._config
+            cached_state = self._state
+            cached_llm = self._llm
+        if cached_config is None or cached_state is None or cached_llm is None:
+            raise RuntimeError("Не удалось инициализировать окружение MCP-сервера")
+        return cached_config, cached_state, cached_llm
+
+    def _close_locked(self) -> None:
+        if self._state is not None:
+            self._state.close()
+        self._config = None
+        self._state = None
+        self._llm = None
+        self._key = None
+
+    def close(self) -> None:
+        """Закрывает соединение с БД (вызывается при завершении сервера)."""
+        with self._lock:
+            self._close_locked()
+
+
+_runtime = _Runtime()
+
+
+def reset_runtime() -> None:
+    """Сбрасывает кэш объектов MCP-сервера (используется в тестах)."""
+    _runtime.close()
+
 
 # ---------------------------------------------------------------------------
 # Allowlist источников и URL (6.1).
@@ -135,7 +211,9 @@ class SearchOutput(BaseModel):
 
     items: list[SearchItem] = Field(default_factory=list, description="Найденные заметки")
     next_cursor: int | None = Field(default=None, description="Курсор для следующей страницы")
-    total: int = Field(default=0, description="Количество найденных")
+    total: int = Field(default=0, description="Общее количество заметок по запросу (COUNT по FTS)")
+    returned: int = Field(default=0, description="Сколько заметок в этой странице")
+    has_more: bool = Field(default=False, description="Есть ли ещё страницы результата")
 
 
 class NoteOutput(BaseModel):
@@ -202,7 +280,9 @@ _SEARCH_INPUT_SCHEMA = {
             "description": "Максимум результатов на страницу",
             "default": 5,
             "minimum": 1,
-            "maximum": 100,
+            # Фактический предел выдачи (StateManager.search ограничивает 20),
+            # чтобы схема не обещала больше, чем вернёт сервер.
+            "maximum": 20,
         },
         "cursor": {
             "type": "integer",
@@ -446,18 +526,18 @@ async def handle_call_tool(name: str, arguments: dict[str, Any] | None) -> Any:
     if arguments is None:
         arguments = {}
 
-    config = load_config()
-    state = StateManager(config.db_path)
-    llm = LLMClient(config)
+    # Конфигурация, StateManager и LLMClient кэшируются на уровне процесса:
+    # иначе на каждый вызов открывалось новое соединение с SQLite, которое
+    # никогда не закрывалось (утечка соединений и WAL-файлов).
+    config, state, llm = _runtime.get()
 
     try:
-        state.init_db()
-
         # ---- Читающие инструменты ----
 
         if name == "kb_search":
             query = arguments.get("query", "") or ""
             limit = int(arguments.get("limit", 5) or 5)
+            # Фактический предел выдачи — 20 (совпадает со схемой инструмента).
             limit = max(1, min(limit, 20))
             cursor = int(arguments.get("cursor", 0) or 0)
             cursor = max(0, cursor)
@@ -474,7 +554,7 @@ async def handle_call_tool(name: str, arguments: dict[str, Any] | None) -> Any:
                 generate_answer=False,
             )
 
-            items: list[SearchItem] = []
+            search_items: list[SearchItem] = []
             # Определяем, есть ли следующая страница (если получили limit+1 записей).
             has_more = len(response.results) > limit
             # Берём только запрошенное количество.
@@ -495,7 +575,7 @@ async def handle_call_tool(name: str, arguments: dict[str, Any] | None) -> Any:
                 # untrusted_content: True для внешнего контента (есть canonical_url),
                 # False для локальных заметок пользователя (нет canonical_url).
                 untrusted = bool(r.canonical_url)
-                items.append(
+                search_items.append(
                     SearchItem(
                         note_id=r.note_id,
                         title=r.title or "Без названия",
@@ -520,40 +600,46 @@ async def handle_call_tool(name: str, arguments: dict[str, Any] | None) -> Any:
                 )
 
             next_cursor = cursor + limit if has_more else None
-            # total — приблизительное, т.к. мы не делаем COUNT(*) для производительности.
+            # total — честное общее число заметок по запросу (COUNT по FTS),
+            # а не приблизительная оценка по странице.
+            total = state.count(query, include_private=False)
             search_output = SearchOutput(
-                items=items,
+                items=search_items,
                 next_cursor=next_cursor,
-                total=cursor + len(items) + (1 if has_more else 0),
+                total=total,
+                returned=len(search_items),
+                has_more=has_more,
             )
 
             lines = [
                 f"## Результаты поиска: {query}",
-                f"Найдено: {len(items)} (показано с {cursor})",
+                f"Найдено: {len(search_items)} (показано с {cursor})",
                 "",
             ]
-            for it in items:
+            for search_item in search_items:
                 prov_parts = []
-                if it.source_id:
-                    prov_parts.append(f"источник={it.source_id}")
-                if it.external_id:
-                    prov_parts.append(f"external_id={it.external_id}")
-                if it.canonical_url:
-                    prov_parts.append(f"url={it.canonical_url}")
-                if it.file_path:
-                    prov_parts.append(f"путь={it.file_path}")
-                if it.revision is not None:
-                    prov_parts.append(f"rev={it.revision}")
-                if it.content_hash:
-                    prov_parts.append(f"hash={it.content_hash[:12]}")
+                if search_item.source_id:
+                    prov_parts.append(f"источник={search_item.source_id}")
+                if search_item.external_id:
+                    prov_parts.append(f"external_id={search_item.external_id}")
+                if search_item.canonical_url:
+                    prov_parts.append(f"url={search_item.canonical_url}")
+                if search_item.file_path:
+                    prov_parts.append(f"путь={search_item.file_path}")
+                if search_item.revision is not None:
+                    prov_parts.append(f"rev={search_item.revision}")
+                if search_item.content_hash:
+                    prov_parts.append(f"hash={search_item.content_hash[:12]}")
                 prov_text = f" [{', '.join(prov_parts)}]" if prov_parts else ""
                 lines.append(
-                    f"- **{it.title}** (ID: {it.note_id}, теги: {', '.join(it.tags)}, тема: {it.topic}, score: {it.score:.2f}{prov_text})"
+                    f"- **{search_item.title}** (ID: {search_item.note_id}, "
+                    f"теги: {', '.join(search_item.tags)}, тема: {search_item.topic}, "
+                    f"score: {search_item.score:.2f}{prov_text})"
                 )
-                snippet = " ".join((it.snippet or "").split())[:300]
+                snippet = " ".join((search_item.snippet or "").split())[:300]
                 if snippet:
                     lines.append(f"  > {snippet}")
-                preview = (it.content_preview or "").strip()
+                preview = (search_item.content_preview or "").strip()
                 if preview:
                     lines.append(f"  Содержимое: {preview}")
             result_text = (
@@ -632,9 +718,9 @@ async def handle_call_tool(name: str, arguments: dict[str, Any] | None) -> Any:
             return [TextContent(type="text", text=result_text)], insights_output
 
         elif name == "kb_sources_status":
-            registry = SourceRegistry(sources_path=config.sources_path, state=state)
+            registry = SourceRegistry(sources_path=config.sources_file, state=state)
             sources = registry.list(enabled_only=False)
-            items = [
+            source_items = [
                 {
                     "source_id": s.id,
                     "source_type": s.type,
@@ -652,7 +738,7 @@ async def handle_call_tool(name: str, arguments: dict[str, Any] | None) -> Any:
                 f"Всего: {len(sources)}, включено: {enabled_count}, выключено: {disabled_count}",
                 "",
             ]
-            for s in items:
+            for s in source_items:
                 status = "✓ включён" if s["enabled"] else "✗ выключен"
                 lines.append(f"- {s['source_id']} | {s['source_type']} | {s['url']} | {status}")
                 if s["last_checked"]:
@@ -664,7 +750,7 @@ async def handle_call_tool(name: str, arguments: dict[str, Any] | None) -> Any:
                 "total": len(sources),
                 "enabled": enabled_count,
                 "disabled": disabled_count,
-                "sources": items,
+                "sources": source_items,
             }
             return [TextContent(type="text", text=result_text)], output
 
@@ -677,7 +763,7 @@ async def handle_call_tool(name: str, arguments: dict[str, Any] | None) -> Any:
                     f"Недопустимый статус: {status}. Доступны: {', '.join(allowed)}.",
                 )
             rows = state.list_proposals(status=status)
-            items = [
+            proposal_items = [
                 {
                     "proposal_id": r["proposal_id"],
                     "target": r["target"],
@@ -692,22 +778,24 @@ async def handle_call_tool(name: str, arguments: dict[str, Any] | None) -> Any:
                 for r in rows
             ]
             lines = [
-                f"## Предложения по улучшению (статус: {status}, количество: {len(items)})",
+                f"## Предложения по улучшению (статус: {status}, количество: {len(proposal_items)})",
                 "",
             ]
-            for it in items:
+            for proposal_item in proposal_items:
                 lines.append(
-                    f"- {it['proposal_id']} | {it['target']} / {it['target_name']} | "
-                    f"v{it['current_version']} → v{it['proposed_version']} | {it['status']}"
+                    f"- {proposal_item['proposal_id']} | "
+                    f"{proposal_item['target']} / {proposal_item['target_name']} | "
+                    f"v{proposal_item['current_version']} → {proposal_item['proposed_version']} | "
+                    f"{proposal_item['status']}"
                 )
-                if it["reason"]:
-                    lines.append(f"  Причина: {it['reason']}")
-                lines.append(f"  Создано: {it['created_at']}")
+                if proposal_item["reason"]:
+                    lines.append(f"  Причина: {proposal_item['reason']}")
+                lines.append(f"  Создано: {proposal_item['created_at']}")
             result_text = "\n".join(lines) if lines else f"Предложений со статусом '{status}' нет."
             return [TextContent(type="text", text=result_text)], {
                 "status": status,
-                "count": len(items),
-                "proposals": items,
+                "count": len(proposal_items),
+                "proposals": proposal_items,
             }
 
         elif name == "kb_get_proposal":
@@ -909,24 +997,28 @@ async def handle_call_tool(name: str, arguments: dict[str, Any] | None) -> Any:
     except Exception:
         logger.exception("Ошибка вызова MCP-инструмента %s", name)
         return _error_result("internal_error", f"Внутренняя ошибка инструмента {name}")
-    finally:
-        state.close()
+    # Соединение с БД не закрывается здесь: StateManager кэшируется на уровне
+    # процесса и закрывается один раз при завершении сервера (см. _Runtime).
 
 
 async def main() -> None:
     """Точка входа для MCP-сервера через stdio."""
-    async with stdio_server() as (read_stream, write_stream):
-        await app.run(
-            read_stream,
-            write_stream,
-            InitializationOptions(
-                server_name="kb-agent",
-                server_version=__version__,
-                capabilities=ServerCapabilities(
-                    tools=ToolsCapability(listChanged=False),
+    try:
+        async with stdio_server() as (read_stream, write_stream):
+            await app.run(
+                read_stream,
+                write_stream,
+                InitializationOptions(
+                    server_name="kb-agent",
+                    server_version=__version__,
+                    capabilities=ServerCapabilities(
+                        tools=ToolsCapability(listChanged=False),
+                    ),
                 ),
-            ),
-        )
+            )
+    finally:
+        # Явно закрываем соединение с SQLite при завершении сервера.
+        reset_runtime()
 
 
 if __name__ == "__main__":

@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [main, master]
 
+permissions:
+  contents: read
+
 jobs:
   lint-and-test:
     runs-on: ubuntu-latest
@@ -15,12 +18,12 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
         with:
           fetch-depth: 0  # needed for setuptools_scm
 
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
         with:
           python-version: ${{ matrix.python-version }}
           cache: "pip"
@@ -42,9 +45,13 @@ jobs:
         run: |
           ruff format --check .
 
-      - name: Run mypy (type check) — non-blocking for pre-existing issues
+      - name: Run mypy (type check) — blocking baseline gate
         run: |
-          mypy kb_agent || true
+          python scripts/check_mypy_baseline.py
+
+      - name: Check prompts sync (config ↔ resources)
+        run: |
+          python scripts/check_prompts_sync.py
 
       - name: Run pytest
         run: |
@@ -63,12 +70,14 @@ jobs:
 
   security-audit:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
         with:
           python-version: "3.11"
           cache: "pip"
@@ -76,20 +85,25 @@ jobs:
       - name: Install pip-audit
         run: pip install pip-audit
 
-      - name: Run security audit
+      - name: Run security audit (blocking)
         run: |
           pip install -e .
-          pip-audit --desc --format=json --output=pip-audit.json || true
-          cat pip-audit.json | jq '.vulnerabilities | length' || echo "No vulnerabilities found"
+          # Проверка блокирующая: pip-audit завершается с кодом 1, если найдена
+          # хотя бы одна уязвимость. Ложные срабатывания подавляются
+          # флагом --ignore-vuln <ID> (см. историю PR).
+          pip-audit --desc --format=json --output=pip-audit.json
+          python -c "import json; d=json.load(open('pip-audit.json')); print('Уязвимостей:', len(d.get('vulnerabilities', [])))"
 
   sync-check:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
         with:
           python-version: "3.11"
           cache: "pip"
@@ -109,3 +123,4 @@ jobs:
                   exit(1)
               print(f'OK: {prompt} ({len(text)} chars)')
           "
+          python scripts/check_prompts_sync.py

@@ -24,16 +24,17 @@ DEFAULT_SUB_LANGS = ["ru", "en"]
 
 
 def _ensure_yt_dlp() -> None:
-    """Проверяет наличие внешнего бинаря yt-dlp в PATH.
+    """Проверяет наличие внешнего бинарника yt-dlp в PATH.
 
-    Вызывается перед сбором YouTube. Если бинарный файл absent,
+    Вызывается перед сбором YouTube. Если бинарный файл отсутствует,
     выбрасывается понятная ошибка с указанием, как установить зависимость.
     """
     if shutil.which("yt-dlp") is None:
         raise RuntimeError(
-            "yt-dlp не найден в PATH. Установите необходимую зависимость: "
-            "pip install '.[youtube]' (или загрузите бинарный файл yt-dlp "
-            "и добавьте его в PATH). Без yt-dlp сбор YouTube невозможен."
+            "yt-dlp не найден в PATH. Установите зависимость: "
+            "pip install yt-dlp (или установите пакет целиком: "
+            "pip install personal-kb-agent), либо загрузите бинарный файл "
+            "yt-dlp и добавьте его в PATH. Без yt-dlp сбор YouTube невозможен."
         )
 
 

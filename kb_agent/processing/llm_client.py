@@ -21,6 +21,7 @@ import httpx
 from pydantic import BaseModel, Field, ValidationError
 
 from kb_agent.config import AppConfig
+from kb_agent.processing.privacy import Redactor, is_local_provider
 from kb_agent.utils.logger import setup_logger
 
 logger = setup_logger("kb_agent.processing.llm_client")
@@ -43,16 +44,27 @@ _JSON_BLOCK_RE = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL | re.IG
 
 
 def _extract_json_block(text: str) -> str:
-    """Извлекает JSON из ответа модели (вырезает markdown-блоки, если есть)."""
-    match = _JSON_BLOCK_RE.search(text or "")
-    if match:
-        return match.group(1)
-    # Иначе пробуем взять всё от первой { до последней }
-    start = text.find("{") if text else -1
-    end = text.rfind("}") if text else -1
+    """Извлекает JSON из ответа модели (вырезает markdown-блоки, если есть).
+
+    Сначала перебираются fenced-блоки и выбирается первый, который реально
+    парсится как JSON: вложенные объекты внутри ```-блока могут содержать
+    ``}`` раньше конца блока, поэтому слепое взятие ``\\{.*?\\}`` обрывало
+    валидный ответ. Если ни один блок не подошёл, используется «от первой
+    ``{`` до последней ``}``» как последний fallback.
+    """
+    text = text or ""
+    candidates = [m.group(1) for m in _JSON_BLOCK_RE.finditer(text)]
+    for candidate in candidates:
+        try:
+            json.loads(candidate)
+        except (ValueError, TypeError):
+            continue
+        return candidate
+    start = text.find("{")
+    end = text.rfind("}")
     if 0 <= start < end:
         return text[start : end + 1]
-    return text or ""
+    return text
 
 
 # Статусы, при которых имеет смысл повторить запрос
@@ -71,6 +83,13 @@ class LLMResponse:
 
 class LLMClient:
     """Клиент к любому OpenAI-совместимому API."""
+
+    # Значения по умолчанию на уровне класса: позволяют использовать объект,
+    # созданный без __init__ (например, заглушки в тестах), не ломаясь
+    # на проверках политики приватности.
+    is_local: bool = False
+    local_processing_mode: bool = False
+    redactor: Redactor = Redactor()
 
     def __init__(self, config: AppConfig) -> None:
         self.config = config
@@ -94,9 +113,61 @@ class LLMClient:
         # (токены, задержка, модель) без изменения сигнатуры методов.
         self.last_response: LLMResponse | None = None
 
+        # Политика приватности (6.2).
+        self.local_processing_mode = bool(getattr(config, "local_processing_mode", False))
+        self.redactor = Redactor.from_config(config)
+        self.is_local = is_local_provider(self.provider, self.base_url)
+
         # Локальные провайдеры (Ollama и т.п.) не требуют API-ключа
         if not self.api_key and self.provider not in ("ollama", "local", "custom"):
             logger.warning("API ключ LLM не задан (KB_OPENAI_API_KEY)")
+
+        if self.local_processing_mode and not self.is_local:
+            logger.error(
+                "Режим локальной обработки включён, но провайдер '%s' не является "
+                "локальным — запросы к внешнему LLM будут заблокированы.",
+                self.provider,
+            )
+
+    # ---- Политика приватности (6.2) ----
+
+    def privacy_policy_error(self) -> str | None:
+        """Возвращает текст ошибки, если политика приватности запрещает запрос.
+
+        ``None`` — запрос разрешён.
+        """
+        if self.local_processing_mode and not self.is_local:
+            return (
+                "Режим локальной обработки (KB_LOCAL_PROCESSING_MODE=true) запрещает "
+                f"отправку данных внешнему провайдеру '{self.provider}'. "
+                "Используйте локальный провайдер (ollama) или отключите режим."
+            )
+        return None
+
+    def is_source_excluded(self, source_id: str | None) -> bool:
+        """Проверяет, исключён ли источник из обработки внешним LLM.
+
+        Для локальных провайдеров источники не исключаются: данные не покидают
+        машину, поэтому полнота локальной базы знаний не страдает.
+        """
+        if self.is_local:
+            return False
+        return self.redactor.is_source_redacted(source_id)
+
+    def redact(self, text: str) -> str:
+        """Вырезает чувствительные поля из текста (только для внешних провайдеров)."""
+        if self.is_local:
+            return text
+        return self.redactor.redact_text(text)
+
+    def _prepare_messages(self, messages: list[dict[str, str]]) -> list[dict[str, str]]:
+        """Готовит сообщения к отправке: применяет redaction полей."""
+        if self.is_local or not self.redactor.has_fields:
+            return messages
+        return [
+            {**message, "content": self.redactor.redact_text(message.get("content", ""))}
+            for message in messages
+        ]
 
     def _headers(self) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}
@@ -113,9 +184,7 @@ class LLMClient:
     def _record_success(self) -> None:
         """Сбрасывает circuit breaker после успешного запроса."""
         if self.circuit_failures > 0 or self.circuit_open:
-            logger.info(
-                "LLM (%s): запрос успешен, circuit breaker сброшен", self.provider
-            )
+            logger.info("LLM (%s): запрос успешен, circuit breaker сброшен", self.provider)
         self.circuit_failures = 0
         self.circuit_open = False
         self.circuit_opened_at = None
@@ -151,6 +220,21 @@ class LLMClient:
         temperature = temperature if temperature is not None else self.temperature
         max_tokens = max_tokens or self.max_tokens
 
+        # Политика приватности (6.2): в локальном режиме внешние провайдеры
+        # запрещены — запрос не выполняется вовсе.
+        policy_error = self.privacy_policy_error()
+        if policy_error:
+            logger.error("%s", policy_error)
+            self.last_response = LLMResponse(
+                text="",
+                model=model,
+                prompt_tokens=0,
+                completion_tokens=0,
+                latency_ms=0.0,
+                error=policy_error,
+            )
+            return self.last_response
+
         if not self.api_key and self.provider not in ("ollama", "local", "custom"):
             self.last_response = LLMResponse(
                 text="",
@@ -165,7 +249,10 @@ class LLMClient:
         # Circuit breaker: если открыт, проверяем, не прошло ли время сброса.
         now = time.time()
         if self.circuit_open:
-            if self.circuit_opened_at is not None and now - self.circuit_opened_at >= self.circuit_reset_after:
+            if (
+                self.circuit_opened_at is not None
+                and now - self.circuit_opened_at >= self.circuit_reset_after
+            ):
                 # Half-open: пробуем ещё один запрос, если успеет — сбросим circuit.
                 self.circuit_open = False
                 self.circuit_failures = 0
@@ -185,7 +272,7 @@ class LLMClient:
 
         payload = {
             "model": model,
-            "messages": messages,
+            "messages": self._prepare_messages(messages),
             "temperature": temperature,
             "max_tokens": max_tokens,
         }
@@ -285,6 +372,22 @@ class LLMClient:
         system_prompt: str | None = None,
     ) -> LLMResponse:
         """Суммаризирует сырой текст в структурированную заметку."""
+        if self.is_source_excluded(source_name):
+            logger.warning(
+                "Источник %s исключён политикой redaction (KB_REDACT_SOURCES) — "
+                "запрос к LLM не выполняется.",
+                source_name,
+            )
+            self.last_response = LLMResponse(
+                text="",
+                model=self.model,
+                prompt_tokens=0,
+                completion_tokens=0,
+                latency_ms=0.0,
+                error=f"источник {source_name} исключён политикой redaction",
+            )
+            return self.last_response
+
         topics_hint = ""
         if topics:
             topics_hint = (
@@ -340,6 +443,21 @@ class LLMClient:
         ``Общее`` и пустым содержимым), чтобы конвейер мог продолжить работу.
         """
         topics = topics or []
+        if self.is_source_excluded(source_name):
+            logger.warning(
+                "Источник %s исключён политикой redaction (KB_REDACT_SOURCES) — "
+                "запрос к LLM не выполняется.",
+                source_name,
+            )
+            self.last_response = LLMResponse(
+                text="",
+                model=self.model,
+                prompt_tokens=0,
+                completion_tokens=0,
+                latency_ms=0.0,
+                error=f"источник {source_name} исключён политикой redaction",
+            )
+            return SummaryData(topic=self._validate_topic("Общее", topics))
         topics_hint = (
             f"\nДопустимые темы (выберите ровно одну): {', '.join(topics)}" if topics else ""
         )

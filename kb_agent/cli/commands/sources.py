@@ -42,10 +42,10 @@ def sources_list(
 ) -> None:
     """Показать список всех источников из канонического хранилища (SQLite)."""
     config = load_config()
-    state = StateManager(config.db_path)
+    state = StateManager(config.db_file)
     try:
         state.init_db()
-        registry = SourceRegistry(sources_path=config.sources_path, state=state)
+        registry = SourceRegistry(sources_path=config.sources_file, state=state)
         sources = registry.list(enabled_only=enabled_only)
     finally:
         state.close()
@@ -108,10 +108,10 @@ def sources_add(
 ) -> None:
     """Добавить новый источник в каноническое хранилище (SQLite)."""
     config = load_config()
-    state = StateManager(config.db_path)
+    state = StateManager(config.db_file)
     try:
         state.init_db()
-        registry = SourceRegistry(sources_path=config.sources_path, state=state)
+        registry = SourceRegistry(sources_path=config.sources_file, state=state)
 
         # Нормализуем и валидируем тип + URL (P2-13).
         try:
@@ -148,7 +148,7 @@ def sources_add(
                 "url": url,
                 "enabled": enabled,
                 "status": "saved",
-                "file": str(config.sources_path),
+                "file": str(config.sources_file),
             }
             if json_output:
                 _output_json(result)
@@ -181,10 +181,10 @@ def sources_remove(
 ) -> None:
     """Удалить источник из канонического хранилища (SQLite)."""
     config = load_config()
-    state = StateManager(config.db_path)
+    state = StateManager(config.db_file)
     try:
         state.init_db()
-        registry = SourceRegistry(sources_path=config.sources_path, state=state)
+        registry = SourceRegistry(sources_path=config.sources_file, state=state)
 
         if not registry.get(source_id):
             msg = f"Источник {source_id} не найден."
@@ -218,10 +218,10 @@ def sources_remove(
 def _toggle_source(source_id: str, enabled: bool, json_output: bool) -> None:
     """Включить или выключить источник в каноническом хранилище (SQLite)."""
     config = load_config()
-    state = StateManager(config.db_path)
+    state = StateManager(config.db_file)
     try:
         state.init_db()
-        registry = SourceRegistry(sources_path=config.sources_path, state=state)
+        registry = SourceRegistry(sources_path=config.sources_file, state=state)
 
         source = registry.get(source_id)
         if not source:

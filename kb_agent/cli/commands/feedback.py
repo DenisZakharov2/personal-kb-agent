@@ -43,7 +43,7 @@ def feedback_rate(
         raise typer.Exit(code=1)
 
     config = load_config()
-    state = StateManager(config.db_path)
+    state = StateManager(config.db_file)
     try:
         state.init_db()
         collector = FeedbackCollector(state)
@@ -80,7 +80,7 @@ def feedback_tell(
 ) -> None:
     """Оставить произвольное сообщение обратной связи (без привязки к заметке)."""
     config = load_config()
-    state = StateManager(config.db_path)
+    state = StateManager(config.db_file)
     try:
         state.init_db()
         collector = FeedbackCollector(state)
@@ -111,7 +111,7 @@ def feedback_metrics(
 ) -> None:
     """Показать агрегированные метрики обратной связи."""
     config = load_config()
-    state = StateManager(config.db_path)
+    state = StateManager(config.db_file)
     try:
         state.init_db()
         collector = FeedbackMetricsCollector(state)
@@ -170,7 +170,7 @@ def feedback_list(
 ) -> None:
     """Показать всю обратную связь по заметке."""
     config = load_config()
-    state = StateManager(config.db_path)
+    state = StateManager(config.db_file)
     try:
         state.init_db()
         collector = FeedbackCollector(state)

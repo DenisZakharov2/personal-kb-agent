@@ -109,7 +109,7 @@ def _make_snippet(
     """
     if not content or not query_terms:
         snippet = content[:window] if content else ""
-        return snippet, (0, len(snippet)) if snippet else None
+        return snippet, ((0, len(snippet)) if snippet else None)
     lower = content.lower()
     best_pos: int | None = None
     for term in query_terms:
@@ -118,7 +118,7 @@ def _make_snippet(
             best_pos = pos
     if best_pos is None:
         snippet = content[:window]
-        return snippet, (0, len(snippet)) if snippet else None
+        return snippet, ((0, len(snippet)) if snippet else None)
     start = max(0, best_pos - window // 2)
     end = min(len(content), best_pos + window // 2)
     snippet = content[start:end]
@@ -232,15 +232,36 @@ class SearchEngine:
             return response
 
         # Формируем контекст для LLM из топ-N заметок (релевантный фрагмент,
-        # а не первые 1500 символов — P2-11)
+        # а не первые 1500 символов — P2-11).
+        #
+        # Политика redaction (6.2): заметки из исключённых источников не
+        # попадают в контекст — их контент не отправляется внешнему LLM.
         context_parts: list[str] = []
         sources: list[str] = []
+        excluded = 0
         for r in results:
+            if self.llm.is_source_excluded(r.source_id):
+                excluded += 1
+                continue
             context_text = r.snippet or r.content[:SNIPPET_WINDOW]
             context_parts.append(
                 f"--- Заметка: {r.title} (ID: {r.note_id}, теги: {r.tags}, score: {r.score:.2f}) ---\n{context_text}"
             )
             sources.append(f"{r.title} (ID: {r.note_id})")
+
+        if excluded:
+            logger.info(
+                "Исключено из контекста LLM заметок из источников с redaction: %s",
+                excluded,
+            )
+
+        if not context_parts:
+            response.enough_data = False
+            response.answer = (
+                "В базе недостаточно данных по вашему запросу "
+                "(найденные заметки исключены политикой redaction)."
+            )
+            return response
 
         context = "\n\n".join(context_parts)
 

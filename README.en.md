@@ -249,11 +249,16 @@ API key and enable local processing mode (see below).
 ### Local Processing Mode
 
 Variable `KB_LOCAL_PROCESSING_MODE=true` enables mode where data
-is not sent to external LLM provider. Works only with local Ollama/
-local model. External providers (OpenAI, Kimi, OpenRouter) are blocked.
+is not sent to external LLM provider. It works **only** with a local
+provider: `ollama`, `local`, or `custom` pointing to a loopback address
+(`localhost`/`127.0.0.1`). If an external provider (OpenAI, Kimi,
+OpenRouter) is selected in this mode, the LLM request is **not performed** —
+the pipeline stops with an error and no data leaves the machine.
 
 ```bash
 export KB_LOCAL_PROCESSING_MODE=true
+export KB_LLM_PROVIDER=ollama
+export KB_OPENAI_BASE_URL=http://localhost:11434/v1
 kb-agent process run
 ```
 
@@ -270,6 +275,19 @@ export KB_REDACT_FIELDS="email,phone,canonical_url"
 export KB_REDACT_SOURCES="tg_private_chan,yt_internal_channel"
 ```
 
+How it works:
+
+- **Fields** (`KB_REDACT_FIELDS`) — values are stripped from the request text
+  (`email`, `phone`, `url`/`canonical_url`, `username`, `secret`, `token`,
+  `password` are supported; for an unknown field name the whole line mentioning
+  that field is removed).
+- **Sources** (`KB_REDACT_SOURCES`) — queue items of those sources are marked
+  `skipped` (content is never summarized nor sent), and notes of those sources
+  are excluded from the LLM answer context.
+
+Redaction applies to external providers only: a local model receives the data
+unchanged, because it never leaves the machine.
+
 ### Sensitivity Labels in MCP
 
 Notes and sources can be marked as private (`is_private = 1`).
@@ -277,6 +295,36 @@ Private notes **are not returned** to external agent via `kb_get_note` and
 are filtered from `kb_search` results for external MCP client. Sensitivity
 is indicated by `is_private` and `sensitivity` (public/internal/private/secret)
 fields in structured MCP responses.
+
+### `kb_search` Contract (MCP)
+
+The structured `kb_search` response contains:
+
+| Field | Meaning |
+|-------|---------|
+| `items` | Notes of the current page (max 20 per call) |
+| `returned` | Number of notes in this page |
+| `total` | **Total** number of notes matching the query (exact FTS count) |
+| `has_more` | Whether more pages exist |
+| `next_cursor` | Cursor of the next page (`null` when there are no more pages) |
+
+`total` is an exact count of all matches (not an estimate for the current page),
+so it can be used for correct pagination.
+
+### State in CI (GitHub Actions)
+
+The daily `KB Collect` workflow persists the state (vault + `state.db`) between
+runs. It is never published in plain text: the archive is encrypted
+(`openssl aes-256-cbc -pbkdf2`) with the `KB_STATE_ENCRYPTION_KEY` secret, and
+only the encrypted file is stored as an artifact (7 days retention). If the
+secret is not configured, the state is not persisted at all.
+
+```bash
+# Generate a key for the KB_STATE_ENCRYPTION_KEY secret
+openssl rand -base64 32
+```
+
+See [SECURITY.md](SECURITY.md) for details.
 
 ### Untrusted Content Chain & Agent Actions
 

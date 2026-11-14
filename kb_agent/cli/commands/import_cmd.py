@@ -172,7 +172,7 @@ def import_command(
 ) -> None:
     """Импортирует Markdown/TXT файлы из папки в базу знаний."""
     config = load_config()
-    state = StateManager(config.db_path)
+    state = StateManager(config.db_file)
     vault = VaultManager(config)
     try:
         state.init_db()
