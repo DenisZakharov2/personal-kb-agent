@@ -6,7 +6,7 @@ on:
       - 'v*'
 
 permissions:
-  id-token: write  # Required for OIDC authentication
+  id-token: write  # Required for OIDC authentication (trusted publishing)
   contents: read
 
 jobs:
@@ -18,7 +18,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
         with:
-          fetch-depth: 0
+          fetch-depth: 0  # setuptools_scm: нужна история для вычисления версии
 
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
@@ -44,3 +44,19 @@ jobs:
         with:
           skip-existing: true
           verbose: true
+          # Пустой PYPI_API_TOKEN → trusted publishing (OIDC, без токена).
+          # Непустой → публикация по API-токену PyPI.
+          password: ${{ secrets.PYPI_API_TOKEN }}
+
+      - name: Итог публикации
+        if: always()
+        run: |
+          {
+            echo "### Публикация на PyPI"
+            echo ""
+            echo "- Проект: https://pypi.org/project/personal-kb-agent/"
+            echo "- Бейдж версии: https://img.shields.io/pypi/v/personal-kb-agent.svg"
+            echo ""
+            echo "Если публикация не удалась, настройте trusted publisher по ссылке:"
+            echo "https://pypi.org/manage/project/personal-kb-agent/settings/publishing/?provider=github&owner=DenisZakharov2&repository=personal-kb-agent&workflow_filename=publish.yml"
+          } >> "$GITHUB_STEP_SUMMARY"

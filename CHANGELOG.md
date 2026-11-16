@@ -5,7 +5,7 @@
 Формат основан на [Keep a Changelog](https://keepachangelog.com/ru/1.0.0/),
 и проект следует [Semantic Versioning](https://semver.org/lang/ru/).
 
-## [Unreleased]
+## [0.2.3] - 2026-11-16
 
 ### Исправлено
 - **Приватность в CI:** состояние базы (vault + `state.db`) больше не публикуется открытым текстом
