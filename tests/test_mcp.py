@@ -99,7 +99,7 @@ class TestMcpCapabilities:
 
 
 class TestMcpProposals:
-    """MCP-инструменты自我улучшения: список, получение, отклонение предложений."""
+    """MCP-инструменты самоулучшения: список, получение, отклонение предложений."""
 
     def test_list_proposals_empty(self, config, state, monkeypatch):
         """kb_list_proposals без предложений — пустой список."""

@@ -1,4 +1,4 @@
-"""Тесты CLI自我улучшения (kb-agent self-improve).
+"""Тесты CLI самоулучшения (kb-agent self-improve).
 
 Покрывают подкоманды: list, propose-prompt, apply-prompt, reject,
 propose-config, apply-config. follows паттерну tests/test_feedback.py.

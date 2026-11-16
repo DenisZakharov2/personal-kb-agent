@@ -163,7 +163,7 @@ class TestYouTubeAutoSubs:
 
     @patch("kb_agent.sources.youtube._download_subs")
     def test_fetch_transcript_auto_fallback_when_manual_none(self, mock_download):
-        """Ручные субтитры absent — используется fallback на автоматические."""
+        """Ручные субтитры отсутствуют — используется fallback на автоматические."""
         mock_download.side_effect = [None, "автоматическая транскрипция"]
 
         result = _fetch_transcript(
@@ -234,7 +234,7 @@ class TestYouTubePublishedAt:
 
 
 class TestYouTubeBinaryCheck:
-    """P1-09: проверка наличия бинаря yt-dlp с понятной ошибкой."""
+    """P1-09: проверка наличия бинарника yt-dlp с понятной ошибкой."""
 
     @patch("kb_agent.sources.youtube.shutil.which", return_value="/usr/bin/yt-dlp")
     def test_ensure_yt_dlp_present(self, mock_which):
