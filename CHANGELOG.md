@@ -58,6 +58,8 @@
 - Проверка синхронности промптов `config/prompts` ↔ `kb_agent/resources/prompts`
   (`scripts/check_prompts_sync.py`)
 - Все GitHub Actions закреплены по SHA; у всех workflow добавлен минимальный `permissions: contents: read`
+- **Исправлен битый SHA в `KB Collect`:** для `actions/download-artifact` был указан SHA от
+  `actions/upload-artifact` — workflow падал на шаге «Set up job» 6 дней подряд (11–15.11.2026)
 
 ### Изменено
 - `AppConfig` предоставляет готовые пути (`db_file`, `profile_file`, `sources_file`, `log_file`,
