@@ -161,13 +161,32 @@ class LLMClient:
         return self.redactor.redact_text(text)
 
     def _prepare_messages(self, messages: list[dict[str, str]]) -> list[dict[str, str]]:
-        """Готовит сообщения к отправке: применяет redaction полей."""
-        if self.is_local or not self.redactor.has_fields:
-            return messages
-        return [
-            {**message, "content": self.redactor.redact_text(message.get("content", ""))}
-            for message in messages
-        ]
+        """
+        \u0413\u043e\u0442\u043e\u0432\u0438\u0440\u0442 \u0441\u043e\u043e\u0431\u0449\u0435\u043d\u0438\u044f \u043a \u043e\u0442\u043f\u0440\u0430\u0432\u043a\u0435: \u043f\u0440\u0438\u043c\u0435\u043d\u044f\u0435\u0442 redaction \u0438 prompt injection protection."""
+        from kb_agent.utils.prompt_security import prompt_scanner
+
+        prepared_messages = []
+        for message in messages:
+            content = message.get("content", "")
+
+            # Защита от prompt injection
+            is_safe, patterns = prompt_scanner.scan(content)
+            if not is_safe:
+                logger.warning(
+                    "Prompt injection attempt detected in message! Patterns: %s. "
+                    "Content will be sanitized.",
+                    patterns,
+                )
+                # Сантизация содержимого
+                content, _ = prompt_scanner.sanitize(content)
+
+            # Применение redaction для нелокальных провайдеров
+            if not self.is_local and self.redactor.has_fields:
+                content = self.redactor.redact_text(content)
+
+            prepared_messages.append({**message, "content": content})
+
+        return prepared_messages
 
     def _headers(self) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}
