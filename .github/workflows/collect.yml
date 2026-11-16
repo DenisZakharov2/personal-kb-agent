@@ -110,7 +110,12 @@ jobs:
           KB_OPENAI_API_KEY: ${{ secrets.KB_OPENAI_API_KEY }}
           KB_OPENAI_BASE_URL: ${{ secrets.KB_OPENAI_BASE_URL }}
           KB_OPENAI_MODEL: ${{ secrets.KB_OPENAI_MODEL }}
+          KB_OPENAI_TEMPERATURE: ${{ secrets.KB_OPENAI_TEMPERATURE }}
+          KB_OPENAI_MAX_TOKENS: ${{ secrets.KB_OPENAI_MAX_TOKENS }}
           KB_LLM_PROVIDER: ${{ secrets.KB_LLM_PROVIDER }}
+          KB_YT_MONTHS: ${{ secrets.KB_YT_MONTHS }}
+          KB_YT_SUB_LANGS: ${{ secrets.KB_YT_SUB_LANGS }}
+          KB_LIMIT: ${{ secrets.KB_LIMIT }}
           # Несекретные пути: все данные конвейера складываем во временную
           # рабочую директорию раннера.
           KB_DATA_DIR: ${{ runner.temp }}/kb-data
