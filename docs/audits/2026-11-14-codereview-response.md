@@ -18,7 +18,7 @@
 | 3.4 | Утечка соединений в MCP-сервере | ✅ Исправлено | `_Runtime`: кэш `StateManager`/`LLMClient` на уровне процесса, явное закрытие при завершении сервера (`reset_runtime`) |
 | 3.5 | `check_duplicates` без сортировки | ✅ Исправлено | Детерминированный `ORDER BY` + критерий «общие теги **и** схожесть заголовков (Жаккар ≥ 0.6)» |
 | 3.6 | Мелкие замечания | ✅ Исправлено | См. список ниже |
-| 4.1 | mypy и pip-audit не блокируют merge | ✅ Исправлено | `scripts/check_mypy_baseline.py` + `ci/mypy-baseline.txt` (падение при росте); `pip-audit` без `|| true`. Долг mypy снижен со 119 до 54 ошибок |
+| 4.1 | mypy и pip-audit не блокируют merge | ✅ Исправлено | `scripts/check_mypy_baseline.py` + `ci/mypy-baseline.txt` (падение при росте); `pip-audit` без `|| true` (аудит изолированного окружения — `scripts/audit_dependencies.sh`). Долг mypy снижен со 119 до 54 ошибок. Попутно найдена и исправлена уязвимая версия pytest в dev-зависимостях (`PYSEC-2026-1845`) и рассинхрон `pyproject.toml` ↔ `uv.lock` |
 | 4.2 | Непоследовательное закрепление actions по SHA | ✅ Исправлено | Все workflow (включая `publish.yml`) используют SHA |
 | 4.3 | Ретеншн артефактов состояния | ✅ Исправлено | `retention-days: 7` + шифрование (см. 2.1) |
 | 5 | Гигиена репозитория | ✅ Исправлено | Отчёты аудитов перенесены в `docs/audits/`; исправлены артефакты ИИ-генерации в комментариях; добавлена проверка синхронности промптов |
@@ -63,5 +63,5 @@ ruff check kb_agent scripts tests    # линтер
 ruff format --check kb_agent scripts tests
 python scripts/check_mypy_baseline.py # mypy против baseline
 python scripts/check_prompts_sync.py  # синхронность промптов
-pip-audit --desc                     # аудит зависимостей
+scripts/audit_dependencies.sh         # аудит зависимостей (изолированный venv)
 ```

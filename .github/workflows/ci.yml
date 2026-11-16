@@ -82,17 +82,13 @@ jobs:
           python-version: "3.11"
           cache: "pip"
 
-      - name: Install pip-audit
-        run: pip install pip-audit
-
       - name: Run security audit (blocking)
         run: |
-          pip install -e .
-          # Проверка блокирующая: pip-audit завершается с кодом 1, если найдена
-          # хотя бы одна уязвимость. Ложные срабатывания подавляются
-          # флагом --ignore-vuln <ID> (см. историю PR).
-          pip-audit --desc --format=json --output=pip-audit.json
-          python -c "import json; d=json.load(open('pip-audit.json')); print('Уязвимостей:', len(d.get('vulnerabilities', [])))"
+          # Аудит идёт по изолированному окружению с зависимостями проекта:
+          # предустановленные инструменты образа runner'а (pip/setuptools) не
+          # относятся к проекту и давали ложные срабатывания.
+          # Скрипт завершается с ненулевым кодом, если найдена уязвимость.
+          bash scripts/audit_dependencies.sh "${{ runner.temp }}/kb-audit-env"
 
   sync-check:
     runs-on: ubuntu-latest

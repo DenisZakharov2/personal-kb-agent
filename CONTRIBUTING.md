@@ -49,6 +49,9 @@ python scripts/check_mypy_baseline.py
 # Синхронность промптов (config/prompts ↔ kb_agent/resources/prompts)
 python scripts/check_prompts_sync.py
 
+# Аудит зависимостей (изолированное окружение, блокирующий)
+scripts/audit_dependencies.sh
+
 # Тесты
 pytest -v
 
@@ -156,6 +159,7 @@ personal-kb-agent/
 ├── scripts/                 # Утилиты
 │   ├── check_mypy_baseline.py   # Блокирующая проверка типов (baseline)
 │   ├── check_prompts_sync.py    # Проверка синхронности промптов
+│   ├── audit_dependencies.sh    # Аудит зависимостей (изолированный venv)
 │   ├── prepare_stage4_write.sh
 │   └── legacy/              # Legacy коллекторы (_queue.jsonl), не используются
 ├── ci/                      # Конфигурация CI
