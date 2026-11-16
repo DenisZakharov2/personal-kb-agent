@@ -101,6 +101,19 @@ jobs:
             echo "Восстановлен vault из предыдущего запуска"
           fi
 
+      - name: Синхронизировать источники с конфигурацией
+        env:
+          KB_TELEGRAM_CHANNELS: ${{ secrets.KB_TELEGRAM_CHANNELS }}
+          KB_YOUTUBE_CHANNELS: ${{ secrets.KB_YOUTUBE_CHANNELS }}
+          KB_DATA_DIR: ${{ runner.temp }}/kb-data
+          KB_VAULT_PATH: ${{ runner.temp }}/kb-vault
+          KB_DB_PATH: ${{ runner.temp }}/kb-data/state.db
+        run: |
+          # Источники, которых больше нет в конфигурации (например,
+          # плейсхолдер @example_channel из .env.example), отключаются —
+          # иначе прогон падал бы на несуществующем канале.
+          python scripts/sync_sources_with_env.py
+
       - name: Run kb-agent pipeline (сбор + суммаризация + индексация)
         env:
           # Секреты передаются только в этом шаге: так они не становятся
