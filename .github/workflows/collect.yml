@@ -13,8 +13,8 @@ concurrency:
 # открытым текстом. Архив шифруется ключом из секрета KB_STATE_ENCRYPTION_KEY.
 # Если секрет не задан — состояние просто не сохраняется (безопасный дефолт).
 #
-# Дополнительная рекомендация: сделайте репозиторий приватным — тогда даже
-# метаданные запусков и логи не будут видны публично.
+# Репозиторий намеренно публичный (код доступен всем желающим), поэтому
+# закрываем именно содержимое базы знаний, а не доступ к коду.
 
 permissions:
   contents: read
@@ -39,12 +39,32 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e .
 
+      - name: Найти предыдущий запуск со состоянием
+        id: prev_run
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          WORKFLOW_FILE: collect.yml
+        run: |
+          set -euo pipefail
+          prev="$(bash scripts/find_previous_state_run.sh)"
+          if [ -n "${prev}" ]; then
+            echo "run_id=${prev}" >> "$GITHUB_OUTPUT"
+            echo "Найден предыдущий запуск со состоянием: ${prev}"
+          else
+            echo "Предыдущих запусков со состоянием нет — начинаем с чистой базы."
+          fi
+
       - name: Restore previous state (encrypted artifact)
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4
-        if: always()
+        if: steps.prev_run.outputs.run_id != ''
         with:
           name: kb-state
           path: ${{ runner.temp }}/kb-restore
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          # Явный run-id: без него скачиваются артефакты текущего запуска,
+          # и состояние между прогонами не восстанавливалось бы.
+          run-id: ${{ steps.prev_run.outputs.run_id }}
         continue-on-error: true
 
       - name: Decrypt and restore state.db + vault
@@ -100,6 +120,7 @@ jobs:
         run: kb-agent process run
 
       - name: Show status
+        if: always()
         env:
           KB_DATA_DIR: ${{ runner.temp }}/kb-data
           KB_VAULT_PATH: ${{ runner.temp }}/kb-vault
