@@ -490,7 +490,7 @@ class StateManager:
 
     def get_queue_items_without_note_id(self) -> list[dict]:
         """Возвращает элементы raw_queue в состоянии processed/failed, у которых
-        не сохранён note_id (Possible orphans после частичного сбоя)."""
+        не сохранён note_id (возможны потерянные записи после частичного сбоя)."""
         conn = self.connect()
         rows = conn.execute(
             """

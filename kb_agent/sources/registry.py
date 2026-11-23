@@ -196,7 +196,7 @@ class SourceRegistry:
             logger.warning("Не удалось экспортировать sources.yaml: %s", exc)
 
     def import_from_yaml(self, sources_path: Path | None = None) -> int:
-        """Импортирует источники из YAML-файла в SQLite (kanon). Возвращает количество импортированных."""
+        """Импортирует источники из YAML-файла в SQLite (каноническое хранилище). Возвращает количество импортированных."""
         path = Path(sources_path) if sources_path else self.sources_path
         if not path.exists():
             logger.warning("YAML файл не найден для импорта: %s", path)
