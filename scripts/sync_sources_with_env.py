@@ -69,10 +69,7 @@ def main() -> int:
         configured = configured_source_ids()
 
         if not configured:
-            print(
-                "KB_TELEGRAM_CHANNELS / KB_YOUTUBE_CHANNELS не заданы (или секреты пусты). "
-                "Синхронизация пропущена, чтобы случайно не отключить все источники."
-            )
+            print("Пропуск синхронизации: конфигурация окружения пуста, источники не изменяю")
             return 0
 
         rows = state.list_sources()
