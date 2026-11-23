@@ -12,6 +12,10 @@
   ``kb-agent sources enable <source_id>``;
 - источники из конфигурации остаются включёнными.
 
+Важно: если конфигурация окружения пуста (обе переменные не заданы или
+пусты — например, секреты не заполнены в CI), синхронизация пропускается,
+чтобы не отключить сразу все включённые источники.
+
 Использование:
     python scripts/sync_sources_with_env.py [--dry-run]
 """
@@ -67,6 +71,14 @@ def main() -> int:
     try:
         state.init_db()
         configured = configured_source_ids()
+
+        if not configured:
+            print(
+                "KB_TELEGRAM_CHANNELS / KB_YOUTUBE_CHANNELS не заданы (или секреты пусты). "
+                "Синхронизация пропущена, чтобы случайно не отключить все источники."
+            )
+            return 0
+
         rows = state.list_sources()
         if not rows:
             print("Источников в базе нет — нечего синхронизировать.")
