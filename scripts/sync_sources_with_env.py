@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Синхронизирует список источников базы знаний с конфигурацией окружения.
 
 Зачем: каноническое хранилище источников — SQLite, и накопленные записи
@@ -67,6 +66,11 @@ def main() -> int:
     try:
         state.init_db()
         configured = configured_source_ids()
+
+        if not configured:
+            print("KB_TELEGRAM_CHANNELS / KB_YOUTUBE_CHANNELS не заданы, источники не изменяю")
+            return 0
+
         rows = state.list_sources()
         if not rows:
             print("Источников в базе нет — нечего синхронизировать.")
