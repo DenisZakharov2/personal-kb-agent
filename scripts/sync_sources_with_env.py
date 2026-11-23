@@ -67,11 +67,6 @@ def main() -> int:
     try:
         state.init_db()
         configured = configured_source_ids()
-
-        if not configured:
-            print("Пропуск синхронизации: конфигурация окружения пуста, источники не изменяю")
-            return 0
-
         rows = state.list_sources()
         if not rows:
             print("Источников в базе нет — нечего синхронизировать.")
