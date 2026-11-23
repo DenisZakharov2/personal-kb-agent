@@ -50,12 +50,12 @@ class TestConfiguredSourceIds:
     def test_empty_env_yields_empty_set(self, sync_script, _clean_env):
         assert sync_script.configured_source_ids() == set()
 
-    def test_telegram_and_youtube_parsed(self, sync_script, monkeypatch):
+    def test_telegram_and_youtube_parsed(self, sync_script, _clean_env, monkeypatch):
         monkeypatch.setenv("KB_TELEGRAM_CHANNELS", "https://t.me/s/ch_one")
         monkeypatch.setenv("KB_YOUTUBE_CHANNELS", "https://youtube.com/@chan")
         assert sync_script.configured_source_ids() == {"tg_ch_one", "yt_chan"}
 
-    def test_invalid_entries_ignored(self, sync_script, monkeypatch):
+    def test_invalid_entries_ignored(self, sync_script, _clean_env, monkeypatch):
         monkeypatch.setenv("KB_TELEGRAM_CHANNELS", "https://t.me/s/good, @@bad,,")
         assert sync_script.configured_source_ids() == {"tg_good"}
 
@@ -89,7 +89,9 @@ class TestEmptyEnvGuard:
             )
         )
         registry.add(
-            SourceConfig(id="tg_removed", type="telegram", url="https://t.me/s/removed", enabled=True)
+            SourceConfig(
+                id="tg_removed", type="telegram", url="https://t.me/s/removed", enabled=True
+            )
         )
 
         assert sync_script.main() == 0
