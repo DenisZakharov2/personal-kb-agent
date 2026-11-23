@@ -32,11 +32,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install ".[dev]"
 
-      - name: Lint diagnostics (temporary, emits ruff errors as annotations)
-        run: |
-          ruff check kb_agent scripts tests --output-format=github --exit-zero
-          ruff format --check kb_agent scripts tests --exit-zero || true
-
       - name: Lint (ruff check)
         run: ruff check kb_agent scripts tests
 
